@@ -78,6 +78,8 @@ export default function Page() {
   const [showKsherForm, setShowKsherForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
 
+  const [isMobile, setIsMobile] = useState(false);
+
   const [coinForm, setCoinForm] = useState({
     machine_id: 1,
     week_start: today(),
@@ -104,6 +106,23 @@ export default function Page() {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const media = window.matchMedia('(max-width: 768px)');
+    const updateViewport = () => setIsMobile(media.matches);
+
+    updateViewport();
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', updateViewport);
+      return () => media.removeEventListener('change', updateViewport);
+    }
+
+    media.addListener(updateViewport);
+    return () => media.removeListener(updateViewport);
   }, []);
 
   useEffect(() => {
@@ -459,36 +478,161 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
+
+  const pageStyle = {
+    ...styles.page,
+    padding: isMobile ? 12 : styles.page.padding,
+  };
+
+  const containerStyle = {
+    ...styles.container,
+    width: '100%',
+  };
+
+  const titleStyle = {
+    ...styles.title,
+    fontSize: isMobile ? 28 : styles.title.fontSize,
+    lineHeight: isMobile ? 1.15 : 1.05,
+  };
+
+  const subtitleStyle = {
+    ...styles.subtitle,
+    fontSize: isMobile ? 14 : styles.subtitle.fontSize,
+  };
+
+  const actionWrapStyle = {
+    ...styles.actionWrap,
+    width: isMobile ? '100%' : undefined,
+    justifyContent: isMobile ? 'stretch' : styles.actionWrap.justifyContent,
+  };
+
+  const actionButtonStyle = (base: React.CSSProperties): React.CSSProperties => ({
+    ...base,
+    flex: isMobile ? '1 1 calc(50% - 8px)' : undefined,
+    width: isMobile ? 'calc(50% - 8px)' : undefined,
+    minHeight: isMobile ? 46 : undefined,
+    fontSize: isMobile ? 14 : undefined,
+  });
+
+  const toolbarRowStyle = {
+    ...styles.toolbarRow,
+    flexDirection: isMobile ? 'column' : 'row',
+    alignItems: isMobile ? 'stretch' : undefined,
+  };
+
+  const filterRowStyle = {
+    ...styles.filterRow,
+    width: isMobile ? '100%' : undefined,
+    overflowX: isMobile ? 'auto' : undefined,
+    flexWrap: isMobile ? 'nowrap' : 'wrap',
+    paddingBottom: isMobile ? 4 : undefined,
+  };
+
+  const pillButtonStyle = (activeBg: string, activeColor: string, active: boolean): React.CSSProperties => ({
+    ...pillBtn,
+    background: active ? activeBg : '#111827',
+    color: active ? activeColor : '#fff',
+    whiteSpace: 'nowrap',
+    flex: isMobile ? '0 0 auto' : undefined,
+    padding: isMobile ? '10px 14px' : pillBtn.padding,
+    fontSize: isMobile ? 13 : undefined,
+  });
+
+  const responsiveKpiGrid = {
+    ...styles.kpiGrid,
+    gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : styles.kpiGrid.gridTemplateColumns,
+    gap: isMobile ? 10 : styles.kpiGrid.gap,
+  };
+
+  const responsiveChartGrid = {
+    ...styles.chartGrid,
+    gridTemplateColumns: isMobile ? '1fr' : styles.chartGrid.gridTemplateColumns,
+  };
+
+  const responsiveBottomGrid = {
+    ...styles.bottomGrid,
+    gridTemplateColumns: isMobile ? '1fr' : styles.bottomGrid.gridTemplateColumns,
+  };
+
+  const responsiveSummaryGrid = {
+    ...styles.summaryGrid,
+    gridTemplateColumns: isMobile ? '1fr' : styles.summaryGrid.gridTemplateColumns,
+  };
+
+  const responsiveTableGrid = {
+    ...styles.tableGrid,
+    gridTemplateColumns: isMobile ? '1fr' : styles.tableGrid.gridTemplateColumns,
+  };
+
+  const mobileChartWrap: React.CSSProperties = {
+    width: '100%',
+    height: isMobile ? 260 : 340,
+  };
+
+  const panelStyle = {
+    ...styles.panel,
+    padding: isMobile ? 14 : styles.panel.padding,
+  };
+
+  const sectionStyle = {
+    ...styles.section,
+    padding: isMobile ? 14 : styles.section.padding,
+  };
+
+  const rowStyle = {
+    ...styles.row,
+    flexDirection: isMobile ? 'column' : 'row',
+    alignItems: isMobile ? 'stretch' : styles.row.alignItems,
+  };
+
+  const rowRightStyle = {
+    ...styles.rowRight,
+    alignSelf: isMobile ? 'flex-start' : undefined,
+  };
+
+  const summaryTextStyle = {
+    ...styles.summaryText,
+    fontSize: isMobile ? 14 : styles.summaryText.fontSize,
+    lineHeight: isMobile ? 1.8 : styles.summaryText.lineHeight,
+  };
+
+  const modalBoxStyle = {
+    ...styles.modalBox,
+    maxWidth: isMobile ? '100%' : styles.modalBox.maxWidth,
+    padding: isMobile ? 16 : styles.modalBox.padding,
+  };
+
+  const tableStyle = {
+    ...styles.table,
+    minWidth: isMobile ? 760 : undefined,
+  };
+
   return (
-    <main style={styles.page}>
-      <div style={styles.container}>
+    <main style={pageStyle}>
+      <div style={containerStyle}>
         <div style={styles.headerWrap}>
           <div>
-            <h1 style={styles.title}>DeanIce Dashboard Pro</h1>
-            <div style={styles.subtitle}>เชื่อม Supabase สำเร็จแล้ว · พร้อมใช้งานจริง</div>
+            <h1 style={titleStyle}>DeanIce Dashboard Pro</h1>
+            <div style={subtitleStyle}>เชื่อม Supabase สำเร็จแล้ว · พร้อมใช้งานจริง</div>
           </div>
 
-          <div style={styles.actionWrap}>
-            <button onClick={loadData} style={btnDark}>Reload</button>
-            <button onClick={exportCsv} style={btnSlate}>Export CSV</button>
-            <button onClick={() => setShowCoinForm(true)} style={btnBlue}>+ รายรับเหรียญ</button>
-            <button onClick={() => setShowKsherForm(true)} style={btnAmber}>+ รายรับ Ksher</button>
-            <button onClick={() => setShowExpenseForm(true)} style={btnRed}>+ รายจ่าย</button>
+          <div style={actionWrapStyle}>
+            <button onClick={loadData} style={actionButtonStyle(btnDark)}>Reload</button>
+            <button onClick={exportCsv} style={actionButtonStyle(btnSlate)}>Export CSV</button>
+            <button onClick={() => setShowCoinForm(true)} style={actionButtonStyle(btnBlue)}>+ รายรับเหรียญ</button>
+            <button onClick={() => setShowKsherForm(true)} style={actionButtonStyle(btnAmber)}>+ รายรับ Ksher</button>
+            <button onClick={() => setShowExpenseForm(true)} style={actionButtonStyle(btnRed)}>+ รายจ่าย</button>
           </div>
         </div>
 
         {loading && <Box>Loading...</Box>}
         {error && <Box bg="#7f1d1d">Error: {error}</Box>}
 
-        <div style={styles.toolbarRow}>
-          <div style={styles.filterRow}>
+        <div style={toolbarRowStyle}>
+          <div style={filterRowStyle}>
             <button
               onClick={() => setSelMachine(null)}
-              style={{
-                ...pillBtn,
-                background: selMachine === null ? '#0ea5e9' : '#111827',
-                color: selMachine === null ? '#000' : '#fff',
-              }}
+              style={{...pillButtonStyle('#0ea5e9', '#000', selMachine === null)}}
             >
               ทุกตู้
             </button>
@@ -497,42 +641,38 @@ function exportCsv() {
               <button
                 key={m.id}
                 onClick={() => setSelMachine(m.id)}
-                style={{
-                  ...pillBtn,
-                  background: selMachine === m.id ? '#f59e0b' : '#111827',
-                  color: selMachine === m.id ? '#000' : '#fff',
-                }}
+                style={{...pillButtonStyle('#f59e0b', '#000', selMachine === m.id)}}
               >
                 {m.name}
               </button>
             ))}
           </div>
 
-          <div style={styles.filterRow}>
-            <button onClick={() => setRange('7d')} style={{ ...pillBtn, background: range === '7d' ? '#22c55e' : '#111827', color: range === '7d' ? '#000' : '#fff' }}>7 วัน</button>
-            <button onClick={() => setRange('30d')} style={{ ...pillBtn, background: range === '30d' ? '#22c55e' : '#111827', color: range === '30d' ? '#000' : '#fff' }}>30 วัน</button>
-            <button onClick={() => setRange('month')} style={{ ...pillBtn, background: range === 'month' ? '#22c55e' : '#111827', color: range === 'month' ? '#000' : '#fff' }}>เดือนนี้</button>
-            <button onClick={() => setRange('all')} style={{ ...pillBtn, background: range === 'all' ? '#22c55e' : '#111827', color: range === 'all' ? '#000' : '#fff' }}>ทั้งหมด</button>
+          <div style={filterRowStyle}>
+            <button onClick={() => setRange('7d')} style={pillButtonStyle('#22c55e', '#000', range === '7d')}>7 วัน</button>
+            <button onClick={() => setRange('30d')} style={pillButtonStyle('#22c55e', '#000', range === '30d')}>30 วัน</button>
+            <button onClick={() => setRange('month')} style={pillButtonStyle('#22c55e', '#000', range === 'month')}>เดือนนี้</button>
+            <button onClick={() => setRange('all')} style={pillButtonStyle('#22c55e', '#000', range === 'all')}>ทั้งหมด</button>
           </div>
         </div>
 
-        <div style={styles.kpiGrid}>
-          <KpiCard title="จำนวนตู้" value={String(db.machines.length)} sub={topMachine ? `Top: ${topMachine.name}` : '-'} />
-          <KpiCard title="รายรับ Ksher" value={`฿${fmt(totalKsher)}`} sub={`เครดิตรวม ฿${fmt(totalCredit)}`} />
-          <KpiCard title="รายรับเหรียญ" value={`฿${fmt(totalCoin)}`} sub="บันทึกจากทีมงาน" />
-          <KpiCard title="กำไรสุทธิ" value={`฿${fmt(grossProfit)}`} sub={`Conservative ฿${fmt(conservativeProfit)}`} />
+        <div style={responsiveKpiGrid}>
+          <KpiCard title="จำนวนตู้" value={String(db.machines.length)} sub={topMachine ? `Top: ${topMachine.name}` : '-'} compact={isMobile} />
+          <KpiCard title="รายรับ Ksher" value={`฿${fmt(totalKsher)}`} sub={`เครดิตรวม ฿${fmt(totalCredit)}`} compact={isMobile} />
+          <KpiCard title="รายรับเหรียญ" value={`฿${fmt(totalCoin)}`} sub="บันทึกจากทีมงาน" compact={isMobile} />
+          <KpiCard title="กำไรสุทธิ" value={`฿${fmt(grossProfit)}`} sub={`Conservative ฿${fmt(conservativeProfit)}`} compact={isMobile} />
         </div>
 
-        <div style={styles.kpiGrid}>
-          <KpiCard title="วันนี้" value={`฿${fmt(todayKsher + todayCoin)}`} sub={`กำไรวันนี้ ฿${fmt(todayProfit)}`} />
-          <KpiCard title="เดือนนี้" value={`฿${fmt(monthKsher + monthCoin)}`} sub={`ค่าใช้จ่ายเดือนนี้ ฿${fmt(monthExp)}`} />
-          <KpiCard title="จำนวนรายการ Ksher" value={String(totalTransactions)} sub={`เฉลี่ย/รายการ ฿${fmt(avgKsherPerTx)}`} />
-          <KpiCard title="Top Machine" value={topMachine ? topMachine.name : '-'} sub={topMachine ? `Profit ฿${fmt(topMachine.profit)}` : '-'} />
+        <div style={responsiveKpiGrid}>
+          <KpiCard title="วันนี้" value={`฿${fmt(todayKsher + todayCoin)}`} sub={`กำไรวันนี้ ฿${fmt(todayProfit)}`} compact={isMobile} />
+          <KpiCard title="เดือนนี้" value={`฿${fmt(monthKsher + monthCoin)}`} sub={`ค่าใช้จ่ายเดือนนี้ ฿${fmt(monthExp)}`} compact={isMobile} />
+          <KpiCard title="จำนวนรายการ Ksher" value={String(totalTransactions)} sub={`เฉลี่ย/รายการ ฿${fmt(avgKsherPerTx)}`} compact={isMobile} />
+          <KpiCard title="Top Machine" value={topMachine ? topMachine.name : '-'} sub={topMachine ? `Profit ฿${fmt(topMachine.profit)}` : '-'} compact={isMobile} />
         </div>
 
-        <div style={styles.chartGrid}>
-          <Panel title={`แนวโน้มรายวัน ${range === '7d' ? '7' : '14'} วันล่าสุด`} rightText="Ksher / Credit / Coin / Expense / Profit">
-            <div style={{ width: '100%', height: 340 }}>
+        <div style={responsiveChartGrid}>
+          <Panel title={`แนวโน้มรายวัน ${range === '7d' ? '7' : '14'} วันล่าสุด`} rightText="Ksher / Credit / Coin / Expense / Profit" compact={isMobile}>
+            <div style={mobileChartWrap}>
               <ResponsiveContainer>
                 <LineChart data={chartDays}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
@@ -550,8 +690,8 @@ function exportCsv() {
             </div>
           </Panel>
 
-          <Panel title="สรุปรายเดือน" rightText="แนวโน้มสะสม">
-            <div style={{ width: '100%', height: 340 }}>
+          <Panel title="สรุปรายเดือน" rightText="แนวโน้มสะสม" compact={isMobile}>
+            <div style={mobileChartWrap}>
               <ResponsiveContainer>
                 <BarChart data={monthChart}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
@@ -568,13 +708,14 @@ function exportCsv() {
           </Panel>
         </div>
 
-        <div style={styles.bottomGrid}>
-          <Section title="Ksher ล่าสุด">
+        <div style={responsiveBottomGrid}>
+          <Section title="Ksher ล่าสุด" compact={isMobile}>
             {filteredKsher.length === 0 ? (
               <EmptyText text="ยังไม่มีข้อมูล Ksher" />
             ) : (
               filteredKsher.slice(0, 10).map((row) => (
                 <Row
+                  compact={isMobile}
                   key={row.id}
                   left={`${row.invoice_no || '-'} | ${row.date || '-'}${row.merchant_no ? ` | M-${row.merchant_no}` : ''}`}
                   right={`฿${fmt(Number(row.trans_amount || 0))}`}
@@ -584,12 +725,13 @@ function exportCsv() {
             )}
           </Section>
 
-          <Section title="รายรับเหรียญ">
+          <Section title="รายรับเหรียญ" compact={isMobile}>
             {filteredCoin.length === 0 ? (
               <EmptyText text="ยังไม่มีข้อมูลเหรียญ" />
             ) : (
               filteredCoin.slice(0, 10).map((row) => (
                 <Row
+                  compact={isMobile}
                   key={row.id}
                   left={`${row.week_start || '-'} | machine ${row.machine_id}`}
                   right={`฿${fmt(Number(row.amount || 0))}`}
@@ -599,12 +741,13 @@ function exportCsv() {
             )}
           </Section>
 
-          <Section title="รายจ่าย">
+          <Section title="รายจ่าย" compact={isMobile}>
             {filteredExp.length === 0 ? (
               <EmptyText text="ยังไม่มีรายจ่าย" />
             ) : (
               filteredExp.slice(0, 10).map((row) => (
                 <Row
+                  compact={isMobile}
                   key={row.id}
                   left={`${row.category || '-'} | ${row.date || '-'}`}
                   right={`฿${fmt(Number(row.amount || 0))}`}
@@ -615,9 +758,9 @@ function exportCsv() {
           </Section>
         </div>
 
-        <div style={styles.summaryGrid}>
-          <Panel title="Executive Summary">
-            <div style={styles.summaryText}>
+        <div style={responsiveSummaryGrid}>
+          <Panel title="Executive Summary" compact={isMobile}>
+            <div style={summaryTextStyle}>
               <div>ช่วงเวลาที่เลือก: <b>{rangeLabel(range)}</b></div>
               <div>รายรับรวม: <b>฿{fmt(totalRevenue)}</b></div>
               <div>รายรับ Ksher: <b>฿{fmt(totalKsher)}</b></div>
@@ -629,8 +772,8 @@ function exportCsv() {
             </div>
           </Panel>
 
-          <Panel title="Quick Insight">
-            <div style={styles.summaryText}>
+          <Panel title="Quick Insight" compact={isMobile}>
+            <div style={summaryTextStyle}>
               <div>วันนี้มียอดรวม: <b>฿{fmt(todayKsher + todayCoin)}</b></div>
               <div>เดือนนี้มียอดรวม: <b>฿{fmt(monthKsher + monthCoin)}</b></div>
               <div>ค่าใช้จ่ายเดือนนี้: <b>฿{fmt(monthExp)}</b></div>
@@ -640,10 +783,10 @@ function exportCsv() {
           </Panel>
         </div>
 
-        <div style={styles.tableGrid}>
-          <Panel title="Top Machine Ranking" rightText="จัดอันดับจากกำไร">
+        <div style={responsiveTableGrid}>
+          <Panel title="Top Machine Ranking" rightText="จัดอันดับจากกำไร" compact={isMobile}>
             <div style={styles.tableWrap}>
-              <table style={styles.table}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
                     <th style={styles.th}>#</th>
@@ -674,9 +817,9 @@ function exportCsv() {
             </div>
           </Panel>
 
-          <Panel title="Recent Transactions" rightText="ล่าสุด 20 รายการ">
+          <Panel title="Recent Transactions" rightText="ล่าสุด 20 รายการ" compact={isMobile}>
             <div style={styles.tableWrap}>
-              <table style={styles.table}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
                     <th style={styles.th}>Type</th>
@@ -803,12 +946,12 @@ function fmtNum(n: number) {
   });
 }
 
-function KpiCard({ title, value, sub }: { title: string; value: string; sub?: string }) {
+function KpiCard({ title, value, sub, compact = false }: { title: string; value: string; sub?: string; compact?: boolean }) {
   return (
-    <div style={styles.kpiCard}>
-      <div style={styles.kpiTitle}>{title}</div>
-      <div style={styles.kpiValue}>{value}</div>
-      <div style={styles.kpiSub}>{sub || '-'}</div>
+    <div style={{ ...styles.kpiCard, padding: isMobile ? 14 : styles.kpiCard.padding }}>
+      <div style={{ ...styles.kpiTitle, fontSize: compact ? 12 : styles.kpiTitle.fontSize }}>{title}</div>
+      <div style={{ ...styles.kpiValue, fontSize: compact ? 22 : styles.kpiValue.fontSize, lineHeight: 1.15 }}>{value}</div>
+      <div style={{ ...styles.kpiSub, fontSize: compact ? 12 : styles.kpiSub.fontSize }}>{sub || '-'}</div>
     </div>
   );
 }
@@ -817,39 +960,41 @@ function Panel({
   title,
   children,
   rightText,
+  compact = false,
 }: {
   title: string;
   children: React.ReactNode;
   rightText?: string;
+  compact?: boolean;
 }) {
   return (
-    <div style={styles.panel}>
-      <div style={styles.panelHeader}>
-        <div style={styles.panelTitle}>{title}</div>
-        <div style={styles.panelRight}>{rightText || ''}</div>
+    <div style={{ ...styles.panel, padding: compact ? 14 : styles.panel.padding }}>
+      <div style={{ ...styles.panelHeader, alignItems: compact ? 'flex-start' : styles.panelHeader.alignItems, flexDirection: compact ? 'column' : 'row' }}>
+        <div style={{ ...styles.panelTitle, fontSize: compact ? 16 : styles.panelTitle.fontSize }}>{title}</div>
+        <div style={{ ...styles.panelRight, fontSize: compact ? 11 : styles.panelRight.fontSize }}>{rightText || ''}</div>
       </div>
       {children}
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, compact = false }: { title: string; children: React.ReactNode; compact?: boolean }) {
   return (
-    <div style={styles.section}>
-      <div style={styles.sectionTitle}>{title}</div>
+    <div style={{ ...styles.section, padding: compact ? 14 : styles.section.padding }}>
+      <div style={{ ...styles.sectionTitle, fontSize: compact ? 16 : styles.sectionTitle.fontSize }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   );
 }
 
-function Row({ left, right, sub }: { left: string; right: string; sub?: string }) {
+function Row({ left, right, sub, compact = false }: { left: string; right: string; sub?: string; compact?: boolean }) {
   return (
-    <div style={styles.row}>
+    <div style={{ ...styles.row, flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : styles.row.alignItems }}>
       <div>
-        <div style={styles.rowLeft}>{left}</div>
+        <div style={{ ...styles.rowLeft, wordBreak: 'break-word' }}>{left}</div>
         {sub ? <div style={styles.rowSub}>{sub}</div> : null}
       </div>
-      <div style={styles.rowRight}>{right}</div>
+      <div style={{ ...styles.rowRight, alignSelf: compact ? 'flex-start' : undefined }}>{right}</div>
     </div>
   );
 }
@@ -865,7 +1010,7 @@ function Box({ children, bg = '#111827' }: { children: React.ReactNode; bg?: str
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div style={styles.modalBackdrop}>
-      <div style={styles.modalBox}>
+      <div style={modalBoxStyle}>
         <div style={styles.modalHeader}>
           <div style={styles.modalTitle}>{title}</div>
           <button onClick={onClose} style={btnDark}>ปิด</button>
