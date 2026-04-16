@@ -479,28 +479,28 @@ function exportCsv() {
 }
 
 
-  const pageStyle = {
+  const pageStyle: React.CSSProperties = {
     ...styles.page,
     padding: isMobile ? 12 : styles.page.padding,
   };
 
-  const containerStyle = {
+  const containerStyle: React.CSSProperties = {
     ...styles.container,
     width: '100%',
   };
 
-  const titleStyle = {
+  const titleStyle: React.CSSProperties = {
     ...styles.title,
     fontSize: isMobile ? 28 : styles.title.fontSize,
     lineHeight: isMobile ? 1.15 : 1.05,
   };
 
-  const subtitleStyle = {
+  const subtitleStyle: React.CSSProperties = {
     ...styles.subtitle,
     fontSize: isMobile ? 14 : styles.subtitle.fontSize,
   };
 
-  const actionWrapStyle = {
+  const actionWrapStyle : React.CSSProperties = {
     ...styles.actionWrap,
     width: isMobile ? '100%' : undefined,
     justifyContent: isMobile ? 'stretch' : styles.actionWrap.justifyContent,
@@ -514,13 +514,13 @@ function exportCsv() {
     fontSize: isMobile ? 14 : undefined,
   });
 
-  const toolbarRowStyle = {
+  const toolbarRowStyle: React.CSSProperties = {
     ...styles.toolbarRow,
     flexDirection: isMobile ? 'column' : 'row',
     alignItems: isMobile ? 'stretch' : undefined,
   };
 
-  const filterRowStyle = {
+  const filterRowStyle : React.CSSProperties = {
     ...styles.filterRow,
     width: isMobile ? '100%' : undefined,
     overflowX: isMobile ? 'auto' : undefined,
@@ -538,28 +538,28 @@ function exportCsv() {
     fontSize: isMobile ? 13 : undefined,
   });
 
-  const responsiveKpiGrid = {
+  const responsiveKpiGrid: React.CSSProperties = {
     ...styles.kpiGrid,
     gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : styles.kpiGrid.gridTemplateColumns,
     gap: isMobile ? 10 : styles.kpiGrid.gap,
   };
 
-  const responsiveChartGrid = {
+  const responsiveChartGrid: React.CSSProperties = {
     ...styles.chartGrid,
     gridTemplateColumns: isMobile ? '1fr' : styles.chartGrid.gridTemplateColumns,
   };
 
-  const responsiveBottomGrid = {
+  const responsiveBottomGrid: React.CSSProperties = {
     ...styles.bottomGrid,
     gridTemplateColumns: isMobile ? '1fr' : styles.bottomGrid.gridTemplateColumns,
   };
 
-  const responsiveSummaryGrid = {
+  const responsiveSummaryGrid: React.CSSProperties = {
     ...styles.summaryGrid,
     gridTemplateColumns: isMobile ? '1fr' : styles.summaryGrid.gridTemplateColumns,
   };
 
-  const responsiveTableGrid = {
+  const responsiveTableGrid: React.CSSProperties = {
     ...styles.tableGrid,
     gridTemplateColumns: isMobile ? '1fr' : styles.tableGrid.gridTemplateColumns,
   };
@@ -569,40 +569,40 @@ function exportCsv() {
     height: isMobile ? 260 : 340,
   };
 
-  const panelStyle = {
+  const panelStyle: React.CSSProperties = {
     ...styles.panel,
     padding: isMobile ? 14 : styles.panel.padding,
   };
 
-  const sectionStyle = {
+  const sectionStyle: React.CSSProperties = {
     ...styles.section,
     padding: isMobile ? 14 : styles.section.padding,
   };
 
-  const rowStyle = {
+  const rowStyle: React.CSSProperties = {
     ...styles.row,
     flexDirection: isMobile ? 'column' : 'row',
     alignItems: isMobile ? 'stretch' : styles.row.alignItems,
   };
 
-  const rowRightStyle = {
+  const rowRightStyle: React.CSSProperties = {
     ...styles.rowRight,
     alignSelf: isMobile ? 'flex-start' : undefined,
   };
 
-  const summaryTextStyle = {
+  const summaryTextStyle: React.CSSProperties = {
     ...styles.summaryText,
     fontSize: isMobile ? 14 : styles.summaryText.fontSize,
     lineHeight: isMobile ? 1.8 : styles.summaryText.lineHeight,
   };
 
-  const modalBoxStyle = {
+  const modalBoxStyle: React.CSSProperties = {
     ...styles.modalBox,
     maxWidth: isMobile ? '100%' : styles.modalBox.maxWidth,
     padding: isMobile ? 16 : styles.modalBox.padding,
   };
 
-  const tableStyle = {
+  const tableStyle: React.CSSProperties = {
     ...styles.table,
     minWidth: isMobile ? 760 : undefined,
   };
@@ -948,7 +948,7 @@ function fmtNum(n: number) {
 
 function KpiCard({ title, value, sub, compact = false }: { title: string; value: string; sub?: string; compact?: boolean }) {
   return (
-    <div style={{ ...styles.kpiCard, padding: isMobile ? 14 : styles.kpiCard.padding }}>
+    <div style={{ ...styles.kpiCard, padding: compact ? 14 : styles.kpiCard.padding }}>
       <div style={{ ...styles.kpiTitle, fontSize: compact ? 12 : styles.kpiTitle.fontSize }}>{title}</div>
       <div style={{ ...styles.kpiValue, fontSize: compact ? 22 : styles.kpiValue.fontSize, lineHeight: 1.15 }}>{value}</div>
       <div style={{ ...styles.kpiSub, fontSize: compact ? 12 : styles.kpiSub.fontSize }}>{sub || '-'}</div>
@@ -1010,7 +1010,7 @@ function Box({ children, bg = '#111827' }: { children: React.ReactNode; bg?: str
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div style={styles.modalBackdrop}>
-      <div style={modalBoxStyle}>
+      <div style={styles.modalBox}>
         <div style={styles.modalHeader}>
           <div style={styles.modalTitle}>{title}</div>
           <button onClick={onClose} style={btnDark}>ปิด</button>
