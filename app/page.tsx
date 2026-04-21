@@ -34,7 +34,8 @@ type IncomeCoin = {
 type IncomeKsher = {
   id: number;
   machine_id: number;
-  date: string;
+  settlement_date: string;
+  txn_date: string | null;
   trans_amount: number;
   commission: number | null;
   credit_amount?: number | null;
@@ -89,7 +90,8 @@ export default function Page() {
 
   const [ksherForm, setKsherForm] = useState({
     machine_id: 1,
-    date: today(),
+    txn_date: today(),
+    settlement_date: today(),
     trans_amount: '',
     invoice_no: '',
     merchant_no: '',
@@ -147,7 +149,7 @@ export default function Page() {
       ] = await Promise.all([
         supabase.from('machines').select('*').order('id'),
         supabase.from('income_coin').select('*').order('week_start', { ascending: false }),
-        supabase.from('income_ksher').select('*').order('date', { ascending: false }),
+        supabase.from('income_ksher').select('*').order('txn_date', { ascending: false, nullsFirst: false }).order('settlement_date', { ascending: false }),
         supabase.from('expenses').select('*').order('date', { ascending: false }),
       ]);
 
@@ -191,7 +193,8 @@ export default function Page() {
 
     const { error } = await supabase.from('income_ksher').insert({
       machine_id: Number(ksherForm.machine_id),
-      date: ksherForm.date,
+      txn_date: ksherForm.txn_date,
+      settlement_date: ksherForm.settlement_date || ksherForm.txn_date,
       trans_amount: Number(ksherForm.trans_amount),
       commission: 0,
       credit_amount: Number(ksherForm.trans_amount),
@@ -248,7 +251,7 @@ export default function Page() {
   const monthPrefix = today().slice(0, 7);
 
   const filteredKsher = useMemo(() => {
-    return machineFilteredKsher.filter(row => inRange(row.date, range, rangeStart, monthPrefix));
+    return machineFilteredKsher.filter(row => inRange(row.txn_date || row.settlement_date, range, rangeStart, monthPrefix));
   }, [machineFilteredKsher, range, rangeStart, monthPrefix]);
 
   const filteredCoin = useMemo(() => {
@@ -271,7 +274,7 @@ export default function Page() {
   const todayStr = today();
 
   const todayKsher = machineFilteredKsher
-    .filter(x => x.date === todayStr)
+    .filter(x => (x.txn_date || x.settlement_date) === todayStr)
     .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
 
   const todayCoin = machineFilteredCoin
@@ -285,7 +288,7 @@ export default function Page() {
   const todayProfit = todayKsher + todayCoin - todayExp;
 
   const monthKsher = machineFilteredKsher
-    .filter(x => (x.date || '').startsWith(monthPrefix))
+    .filter(x => ((x.txn_date || x.settlement_date || '')).startsWith(monthPrefix))
     .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
 
   const monthCoin = machineFilteredCoin
@@ -307,11 +310,11 @@ export default function Page() {
 
     return days.map(day => {
       const ksher = machineFilteredKsher
-        .filter(x => x.date === day)
+        .filter(x => (x.txn_date || x.settlement_date) === day)
         .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
 
       const credit = machineFilteredKsher
-        .filter(x => x.date === day)
+        .filter(x => (x.txn_date || x.settlement_date) === day)
         .reduce((s, x) => s + Number(x.credit_amount || 0), 0);
 
       const expense = machineFilteredExp
@@ -337,7 +340,7 @@ export default function Page() {
     const map = new Map<string, { month: string; ksher: number; credit: number; coin: number; expense: number; profit: number }>();
 
     machineFilteredKsher.forEach(row => {
-      const month = (row.date || '').slice(0, 7);
+      const month = (row.txn_date || row.settlement_date || '').slice(0, 7);
       if (!month) return;
       if (!map.has(month)) map.set(month, { month, ksher: 0, credit: 0, coin: 0, expense: 0, profit: 0 });
       map.get(month)!.ksher += Number(row.trans_amount || 0);
@@ -409,12 +412,12 @@ const recentTransactions = useMemo(() => {
   const ksherRows = filteredKsher.map(row => ({
     key: `k-${row.id}`,
     type: 'Ksher',
-    date: row.date,
+    date: row.txn_date || row.settlement_date,
     machine_id: row.machine_id,
     location: machineMap.get(row.machine_id) || '-',
     ref: row.invoice_no || '-',
     amount: Number(row.trans_amount || 0),
-    sub: `Credit ฿${fmtNum(row.credit_amount || 0)} | M-${row.merchant_no || '-'}`,
+    sub: `Txn ${row.txn_date || '-'} | Settle ${row.settlement_date || '-'} | Credit ฿${fmtNum(row.credit_amount || 0)} | M-${row.merchant_no || '-'}`,
   }));
 
   const coinRows = filteredCoin.map(row => ({
@@ -453,7 +456,7 @@ const recentTransactions = useMemo(() => {
 
 function exportCsv() {
   const rows = [
-    ['type', 'date', 'machine_id', 'location', 'reference', 'amount', 'sub'],
+    ['type', 'txn_date', 'machine_id', 'location', 'reference', 'amount', 'sub'],
     ...recentTransactions.map(r => [
       r.type,
       r.date,
@@ -717,7 +720,7 @@ function exportCsv() {
                 <Row
                   compact={isMobile}
                   key={row.id}
-                  left={`${row.invoice_no || '-'} | ${row.date || '-'}${row.merchant_no ? ` | M-${row.merchant_no}` : ''}`}
+                  left={`${row.invoice_no || '-'} | Txn ${row.txn_date || '-'} | Settle ${row.settlement_date || '-'}${row.merchant_no ? ` | M-${row.merchant_no}` : ''}`}
                   right={`฿${fmt(Number(row.trans_amount || 0))}`}
                   sub={`Credit ฿${fmt(Number(row.credit_amount || 0))} | Comm ฿${fmt(Number(row.commission || 0))}`}
                 />
@@ -823,7 +826,7 @@ function exportCsv() {
                 <thead>
                   <tr>
                     <th style={styles.th}>Type</th>
-                    <th style={styles.th}>Date</th>
+                    <th style={styles.th}>Txn Date</th>
                     <th style={styles.th}>Machine</th>
 					<th style={styles.th}>Location</th>
                     <th style={styles.th}>Reference</th>
@@ -863,7 +866,8 @@ function exportCsv() {
       {showKsherForm && (
         <Modal title="บันทึกรายรับ Ksher (Manual)" onClose={() => setShowKsherForm(false)}>
           <MachineSelect machines={db.machines} value={ksherForm.machine_id} onChange={(v) => setKsherForm({ ...ksherForm, machine_id: v })} />
-          <Input label="วันที่" type="date" value={ksherForm.date} onChange={(v) => setKsherForm({ ...ksherForm, date: v })} />
+          <Input label="Txn Date" type="date" value={ksherForm.txn_date} onChange={(v) => setKsherForm({ ...ksherForm, txn_date: v })} />
+          <Input label="Settlement Date" type="date" value={ksherForm.settlement_date} onChange={(v) => setKsherForm({ ...ksherForm, settlement_date: v })} />
           <Input label="ยอดเงิน" type="number" value={ksherForm.trans_amount} onChange={(v) => setKsherForm({ ...ksherForm, trans_amount: v })} />
           <Input label="Invoice No." value={ksherForm.invoice_no} onChange={(v) => setKsherForm({ ...ksherForm, invoice_no: v })} />
           <Input label="Merchant No." value={ksherForm.merchant_no} onChange={(v) => setKsherForm({ ...ksherForm, merchant_no: v })} />
