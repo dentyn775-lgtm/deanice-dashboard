@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
+  ResponsiveContainer,
   LineChart,
   Line,
   CartesianGrid,
@@ -33,9 +34,8 @@ type IncomeCoin = {
 type IncomeKsher = {
   id: number;
   machine_id: number;
-  settlement_date?: string | null;
-  txn_date?: string | null;
-  date?: string | null;
+  settlement_date: string;
+  txn_date: string | null;
   trans_amount: number;
   commission: number | null;
   credit_amount?: number | null;
@@ -55,29 +55,7 @@ type Expense = {
   created_at?: string | null;
 };
 
-type ExpenseMaster = {
-  id: number;
-  machine_id: number | null;
-  expense_type: string | null;
-  expense_category: string | null;
-  amount: number;
-  expense_date: string;
-  recurring: boolean | null;
-  recurring_type: string | null;
-  note: string | null;
-  created_at?: string | null;
-};
-
-type TxnRow = {
-  key: string;
-  type: string;
-  date: string;
-  machine_id: number | null;
-  location: string;
-  ref: string;
-  amount: number;
-  sub: string;
-};
+type RangeKey = '7d' | '30d' | 'month' | 'all';
 
 export default function Page() {
   const [db, setDb] = useState<{
@@ -85,26 +63,23 @@ export default function Page() {
     income_coin: IncomeCoin[];
     income_ksher: IncomeKsher[];
     expenses: Expense[];
-    expense_master: ExpenseMaster[];
   }>({
     machines: [],
     income_coin: [],
     income_ksher: [],
     expenses: [],
-    expense_master: [],
   });
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selMachine, setSelMachine] = useState<number | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState(today().slice(0, 7));
+  const [range, setRange] = useState<RangeKey>('30d');
 
   const [showCoinForm, setShowCoinForm] = useState(false);
   const [showKsherForm, setShowKsherForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
 
   const [isMobile, setIsMobile] = useState(false);
-  const [chartWidth, setChartWidth] = useState(620);
 
   const [coinForm, setCoinForm] = useState({
     machine_id: 1,
@@ -138,16 +113,18 @@ export default function Page() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const updateViewport = () => {
-      const w = window.innerWidth || 1024;
-      const mobile = w <= 768;
-      setIsMobile(mobile);
-      setChartWidth(mobile ? Math.max(360, w - 64) : 620);
-    };
+    const media = window.matchMedia('(max-width: 768px)');
+    const updateViewport = () => setIsMobile(media.matches);
 
     updateViewport();
-    window.addEventListener('resize', updateViewport);
-    return () => window.removeEventListener('resize', updateViewport);
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', updateViewport);
+      return () => media.removeEventListener('change', updateViewport);
+    }
+
+    media.addListener(updateViewport);
+    return () => media.removeListener(updateViewport);
   }, []);
 
   useEffect(() => {
@@ -169,33 +146,23 @@ export default function Page() {
         { data: income_coin, error: e2 },
         { data: income_ksher, error: e3 },
         { data: expenses, error: e4 },
-        { data: expense_master, error: e5 },
       ] = await Promise.all([
         supabase.from('machines').select('*').order('id'),
         supabase.from('income_coin').select('*').order('week_start', { ascending: false }),
-        supabase.from('income_ksher').select('*').order('txn_date', { ascending: false }),
+        supabase.from('income_ksher').select('*').order('txn_date', { ascending: false, nullsFirst: false }).order('settlement_date', { ascending: false }),
         supabase.from('expenses').select('*').order('date', { ascending: false }),
-        supabase.from('expense_master').select('*').order('expense_date', { ascending: false }),
       ]);
 
-      if (e1 || e2 || e3 || e4 || e5) {
-        throw new Error(e1?.message || e2?.message || e3?.message || e4?.message || e5?.message || 'Load data failed');
+      if (e1 || e2 || e3 || e4) {
+        throw new Error(e1?.message || e2?.message || e3?.message || e4?.message || 'Load data failed');
       }
 
-      const nextDb = {
+      setDb({
         machines: (machines || []) as Machine[],
         income_coin: (income_coin || []) as IncomeCoin[],
         income_ksher: (income_ksher || []) as IncomeKsher[],
         expenses: (expenses || []) as Expense[],
-        expense_master: (expense_master || []) as ExpenseMaster[],
-      };
-
-      setDb(nextDb);
-
-      const options = buildMonthOptions(nextDb.income_ksher, nextDb.income_coin, nextDb.expenses, nextDb.expense_master);
-      if (options.length && !options.includes(selectedMonth)) {
-        setSelectedMonth(options[0]);
-      }
+      });
     } catch (err: any) {
       setError(err.message || 'Unknown error');
     } finally {
@@ -265,15 +232,6 @@ export default function Page() {
     await loadData();
   }
 
-  const monthOptions = useMemo(
-    () => buildMonthOptions(db.income_ksher, db.income_coin, db.expenses, db.expense_master),
-    [db]
-  );
-
-  const currentYear = selectedMonth.slice(0, 4);
-  const prevMonth = addMonths(selectedMonth, -1);
-  const selectedMonthLabel = formatMonthLabel(selectedMonth);
-
   const machineFilteredKsher = useMemo(
     () => (selMachine ? db.income_ksher.filter(x => x.machine_id === selMachine) : db.income_ksher),
     [db.income_ksher, selMachine]
@@ -289,38 +247,34 @@ export default function Page() {
     [db.expenses, selMachine]
   );
 
+  const rangeStart = useMemo(() => getRangeStart(range), [range]);
+  const monthPrefix = today().slice(0, 7);
+
   const filteredKsher = useMemo(() => {
-    return machineFilteredKsher.filter(row => getKsherTxnDate(row).slice(0, 7) === selectedMonth);
-  }, [machineFilteredKsher, selectedMonth]);
+    return machineFilteredKsher.filter(row => inRange(row.txn_date || row.settlement_date, range, rangeStart, monthPrefix));
+  }, [machineFilteredKsher, range, rangeStart, monthPrefix]);
 
   const filteredCoin = useMemo(() => {
-    return machineFilteredCoin.filter(row => (row.week_start || '').slice(0, 7) === selectedMonth);
-  }, [machineFilteredCoin, selectedMonth]);
+    return machineFilteredCoin.filter(row => inRange(row.week_start, range, rangeStart, monthPrefix));
+  }, [machineFilteredCoin, range, rangeStart, monthPrefix]);
 
   const filteredExp = useMemo(() => {
-    return machineFilteredExp.filter(row => (row.date || '').slice(0, 7) === selectedMonth);
-  }, [machineFilteredExp, selectedMonth]);
-
-  const filteredMasterExp = useMemo(() => {
-    return expenseMasterForMonth(db.expense_master, selectedMonth, selMachine);
-  }, [db.expense_master, selectedMonth, selMachine]);
+    return machineFilteredExp.filter(row => inRange(row.date, range, rangeStart, monthPrefix));
+  }, [machineFilteredExp, range, rangeStart, monthPrefix]);
 
   const totalKsher = filteredKsher.reduce((s, x) => s + Number(x.trans_amount || 0), 0);
   const totalCredit = filteredKsher.reduce((s, x) => s + Number(x.credit_amount || 0), 0);
   const totalCoin = filteredCoin.reduce((s, x) => s + Number(x.amount || 0), 0);
-  const actualExpense = filteredExp.reduce((s, x) => s + Number(x.amount || 0), 0);
-  const masterExpense = filteredMasterExp.reduce((s, x) => s + Number(x.amount || 0), 0);
-  const totalExp = actualExpense + masterExpense;
+  const totalExp = filteredExp.reduce((s, x) => s + Number(x.amount || 0), 0);
 
   const totalRevenue = totalKsher + totalCoin;
   const grossProfit = totalRevenue - totalExp;
   const conservativeProfit = totalCredit + totalCoin - totalExp;
 
   const todayStr = today();
-  const isCurrentMonth = selectedMonth === todayStr.slice(0, 7);
 
   const todayKsher = machineFilteredKsher
-    .filter(x => getKsherTxnDate(x) === todayStr)
+    .filter(x => (x.txn_date || x.settlement_date) === todayStr)
     .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
 
   const todayCoin = machineFilteredCoin
@@ -333,79 +287,39 @@ export default function Page() {
 
   const todayProfit = todayKsher + todayCoin - todayExp;
 
-  const prevKsher = machineFilteredKsher
-    .filter(x => getKsherTxnDate(x).slice(0, 7) === prevMonth)
+  const monthKsher = machineFilteredKsher
+    .filter(x => ((x.txn_date || x.settlement_date || '')).startsWith(monthPrefix))
     .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
 
-  const prevCoin = machineFilteredCoin
-    .filter(x => (x.week_start || '').slice(0, 7) === prevMonth)
+  const monthCoin = machineFilteredCoin
+    .filter(x => (x.week_start || '').startsWith(monthPrefix))
     .reduce((s, x) => s + Number(x.amount || 0), 0);
 
-  const prevActualExp = machineFilteredExp
-    .filter(x => (x.date || '').slice(0, 7) === prevMonth)
+  const monthExp = machineFilteredExp
+    .filter(x => (x.date || '').startsWith(monthPrefix))
     .reduce((s, x) => s + Number(x.amount || 0), 0);
 
-  const prevMasterExp = expenseMasterForMonth(db.expense_master, prevMonth, selMachine)
-    .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-  const prevRevenue = prevKsher + prevCoin;
-  const prevExpense = prevActualExp + prevMasterExp;
-  const prevProfit = prevRevenue - prevExpense;
-
-  const momRevenueGrowth = calcGrowth(totalRevenue, prevRevenue);
-  const momProfitGrowth = calcGrowth(grossProfit, prevProfit);
-
-  const ytdKsher = machineFilteredKsher
-    .filter(x => getKsherTxnDate(x).startsWith(currentYear) && getKsherTxnDate(x).slice(0, 7) <= selectedMonth)
-    .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
-
-  const ytdCredit = machineFilteredKsher
-    .filter(x => getKsherTxnDate(x).startsWith(currentYear) && getKsherTxnDate(x).slice(0, 7) <= selectedMonth)
-    .reduce((s, x) => s + Number(x.credit_amount || 0), 0);
-
-  const ytdCoin = machineFilteredCoin
-    .filter(x => (x.week_start || '').startsWith(currentYear) && (x.week_start || '').slice(0, 7) <= selectedMonth)
-    .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-  const ytdActualExp = machineFilteredExp
-    .filter(x => (x.date || '').startsWith(currentYear) && (x.date || '').slice(0, 7) <= selectedMonth)
-    .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-  const ytdMasterExp = buildMonthsYtd(currentYear, selectedMonth)
-    .reduce((sum, month) => {
-      return sum + expenseMasterForMonth(db.expense_master, month, selMachine)
-        .reduce((s, x) => s + Number(x.amount || 0), 0);
-    }, 0);
-
-  const ytdRevenue = ytdKsher + ytdCoin;
-  const ytdExpense = ytdActualExp + ytdMasterExp;
-  const ytdProfit = ytdRevenue - ytdExpense;
-  const ytdConservativeProfit = ytdCredit + ytdCoin - ytdExpense;
-
-  const breakEvenGap = grossProfit;
-  const breakEvenText = breakEvenGap >= 0
-    ? `เกินจุดคุ้มทุน ฿${fmt(breakEvenGap)}`
-    : `ขาดทุนเดือนนี้ ฿${fmt(Math.abs(breakEvenGap))}`;
+  const monthProfit = monthKsher + monthCoin - monthExp;
 
   const totalTransactions = filteredKsher.length;
   const avgKsherPerTx = totalTransactions > 0 ? totalKsher / totalTransactions : 0;
 
   const chartDays = useMemo(() => {
-    const days = buildDaysInMonth(selectedMonth);
-    const dailyMaster = 0;
+    const n = range === '7d' ? 7 : 14;
+    const days = buildLastNDays(n);
 
     return days.map(day => {
       const ksher = machineFilteredKsher
-        .filter(x => getKsherTxnDate(x) === day)
+        .filter(x => (x.txn_date || x.settlement_date) === day)
         .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
 
       const credit = machineFilteredKsher
-        .filter(x => getKsherTxnDate(x) === day)
+        .filter(x => (x.txn_date || x.settlement_date) === day)
         .reduce((s, x) => s + Number(x.credit_amount || 0), 0);
 
       const expense = machineFilteredExp
         .filter(x => x.date === day)
-        .reduce((s, x) => s + Number(x.amount || 0), 0) + dailyMaster;
+        .reduce((s, x) => s + Number(x.amount || 0), 0);
 
       const coin = machineFilteredCoin
         .filter(x => x.week_start === day)
@@ -420,66 +334,58 @@ export default function Page() {
         profit: ksher + coin - expense,
       };
     });
-  }, [machineFilteredKsher, machineFilteredCoin, machineFilteredExp, selectedMonth]);
+  }, [machineFilteredKsher, machineFilteredCoin, machineFilteredExp, range]);
 
   const monthChart = useMemo(() => {
-    const months = buildMonthsYtd(currentYear, selectedMonth);
+    const map = new Map<string, { month: string; ksher: number; credit: number; coin: number; expense: number; profit: number }>();
 
-    return months.map(month => {
-      const ksher = machineFilteredKsher
-        .filter(x => getKsherTxnDate(x).slice(0, 7) === month)
-        .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
-
-      const credit = machineFilteredKsher
-        .filter(x => getKsherTxnDate(x).slice(0, 7) === month)
-        .reduce((s, x) => s + Number(x.credit_amount || 0), 0);
-
-      const coin = machineFilteredCoin
-        .filter(x => (x.week_start || '').slice(0, 7) === month)
-        .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-      const actualExp = machineFilteredExp
-        .filter(x => (x.date || '').slice(0, 7) === month)
-        .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-      const fixedExp = expenseMasterForMonth(db.expense_master, month, selMachine)
-        .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-      const expense = actualExp + fixedExp;
-
-      return {
-        month,
-        ksher,
-        credit,
-        coin,
-        expense,
-        profit: ksher + coin - expense,
-      };
+    machineFilteredKsher.forEach(row => {
+      const month = (row.txn_date || row.settlement_date || '').slice(0, 7);
+      if (!month) return;
+      if (!map.has(month)) map.set(month, { month, ksher: 0, credit: 0, coin: 0, expense: 0, profit: 0 });
+      map.get(month)!.ksher += Number(row.trans_amount || 0);
+      map.get(month)!.credit += Number(row.credit_amount || 0);
     });
-  }, [currentYear, selectedMonth, machineFilteredKsher, machineFilteredCoin, machineFilteredExp, db.expense_master, selMachine]);
+
+    machineFilteredCoin.forEach(row => {
+      const month = (row.week_start || '').slice(0, 7);
+      if (!month) return;
+      if (!map.has(month)) map.set(month, { month, ksher: 0, credit: 0, coin: 0, expense: 0, profit: 0 });
+      map.get(month)!.coin += Number(row.amount || 0);
+    });
+
+    machineFilteredExp.forEach(row => {
+      const month = (row.date || '').slice(0, 7);
+      if (!month) return;
+      if (!map.has(month)) map.set(month, { month, ksher: 0, credit: 0, coin: 0, expense: 0, profit: 0 });
+      map.get(month)!.expense += Number(row.amount || 0);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(x => ({
+        ...x,
+        profit: x.ksher + x.coin - x.expense,
+      }));
+  }, [machineFilteredKsher, machineFilteredCoin, machineFilteredExp]);
 
   const machineRanking = useMemo(() => {
     const rows = db.machines.map(m => {
       const ksher = db.income_ksher
-        .filter(x => x.machine_id === m.id && getKsherTxnDate(x).slice(0, 7) === selectedMonth)
+        .filter(x => x.machine_id === m.id)
         .reduce((s, x) => s + Number(x.trans_amount || 0), 0);
 
       const credit = db.income_ksher
-        .filter(x => x.machine_id === m.id && getKsherTxnDate(x).slice(0, 7) === selectedMonth)
+        .filter(x => x.machine_id === m.id)
         .reduce((s, x) => s + Number(x.credit_amount || 0), 0);
 
       const coin = db.income_coin
-        .filter(x => x.machine_id === m.id && (x.week_start || '').slice(0, 7) === selectedMonth)
+        .filter(x => x.machine_id === m.id)
         .reduce((s, x) => s + Number(x.amount || 0), 0);
 
-      const actualExp = db.expenses
-        .filter(x => x.machine_id === m.id && (x.date || '').slice(0, 7) === selectedMonth)
+      const exp = db.expenses
+        .filter(x => x.machine_id === m.id)
         .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-      const fixedExp = expenseMasterForMonth(db.expense_master, selectedMonth, m.id)
-        .reduce((s, x) => s + Number(x.amount || 0), 0);
-
-      const exp = actualExp + fixedExp;
 
       return {
         id: m.id,
@@ -496,61 +402,50 @@ export default function Page() {
 
     rows.sort((a, b) => b.profit - a.profit);
     return rows;
-  }, [db, selectedMonth]);
+  }, [db]);
 
   const topMachine = machineRanking[0] || null;
 
-  const recentTransactions = useMemo<TxnRow[]>(() => {
-    const machineMap = new Map(db.machines.map(m => [m.id, m.location || '-']));
+const recentTransactions = useMemo(() => {
+  const machineMap = new Map(db.machines.map(m => [m.id, m.location || '-']));
 
-    const ksherRows: TxnRow[] = filteredKsher.map(row => ({
-      key: `k-${row.id}`,
-      type: 'Ksher',
-      date: getKsherTxnDate(row),
-      machine_id: row.machine_id,
-      location: machineMap.get(row.machine_id) || '-',
-      ref: row.invoice_no || '-',
-      amount: Number(row.trans_amount || 0),
-      sub: `Txn ${row.txn_date || '-'} | Settle ${row.settlement_date || '-'} | Credit ฿${fmtNum(row.credit_amount || 0)} | M-${row.merchant_no || '-'}`,
-    }));
+  const ksherRows = filteredKsher.map(row => ({
+    key: `k-${row.id}`,
+    type: 'Ksher',
+    date: row.txn_date || row.settlement_date,
+    machine_id: row.machine_id,
+    location: machineMap.get(row.machine_id) || '-',
+    ref: row.invoice_no || '-',
+    amount: Number(row.trans_amount || 0),
+    sub: `Txn ${row.txn_date || '-'} | Settle ${row.settlement_date || '-'} | Credit ฿${fmtNum(row.credit_amount || 0)} | M-${row.merchant_no || '-'}`,
+  }));
 
-    const coinRows: TxnRow[] = filteredCoin.map(row => ({
-      key: `c-${row.id}`,
-      type: 'Coin',
-      date: row.week_start,
-      machine_id: row.machine_id,
-      location: machineMap.get(row.machine_id) || '-',
-      ref: row.note || 'บันทึกรับเหรียญ',
-      amount: Number(row.amount || 0),
-      sub: 'รายรับเหรียญ',
-    }));
+  const coinRows = filteredCoin.map(row => ({
+    key: `c-${row.id}`,
+    type: 'Coin',
+    date: row.week_start,
+    machine_id: row.machine_id,
+    location: machineMap.get(row.machine_id) || '-',
+    ref: row.note || 'บันทึกรับเหรียญ',
+    amount: Number(row.amount || 0),
+    sub: 'รายรับเหรียญ',
+  }));
 
-    const expRows: TxnRow[] = filteredExp.map(row => ({
-      key: `e-${row.id}`,
-      type: 'Expense',
-      date: row.date,
-      machine_id: row.machine_id,
-      location: machineMap.get(row.machine_id) || '-',
-      ref: row.category || '-',
-      amount: Number(row.amount || 0) * -1,
-      sub: row.note || '',
-    }));
+  const expRows = filteredExp.map(row => ({
+    key: `e-${row.id}`,
+    type: 'Expense',
+    date: row.date,
+    machine_id: row.machine_id,
+    location: machineMap.get(row.machine_id) || '-',
+    ref: row.category || '-',
+    amount: Number(row.amount || 0) * -1,
+    sub: row.note || '',
+  }));
 
-    const masterRows: TxnRow[] = filteredMasterExp.map(row => ({
-      key: `m-${row.id}-${selectedMonth}`,
-      type: row.recurring ? 'Fixed Cost' : 'Master Cost',
-      date: `${selectedMonth}-01`,
-      machine_id: row.machine_id,
-      location: row.machine_id ? machineMap.get(row.machine_id) || '-' : 'ทุกตู้',
-      ref: row.expense_type || row.expense_category || 'ค่าใช้จ่ายประจำ',
-      amount: Number(row.amount || 0) * -1,
-      sub: `${row.expense_category || '-'} | ${row.recurring ? `Recurring ${row.recurring_type || ''}` : 'One-time'} | ${row.note || ''}`,
-    }));
-
-    return [...ksherRows, ...coinRows, ...expRows, ...masterRows]
-      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-      .slice(0, 100);
-  }, [filteredKsher, filteredCoin, filteredExp, filteredMasterExp, db.machines, selectedMonth]);
+  return [...ksherRows, ...coinRows, ...expRows]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 20);
+}, [filteredKsher, filteredCoin, filteredExp, db.machines]);
 
   function fmt(n: number) {
     return Number(n || 0).toLocaleString('th-TH', {
@@ -559,51 +454,70 @@ export default function Page() {
     });
   }
 
-  function exportCsv() {
-    const rows = [
-      ['type', 'txn_date', 'machine_id', 'location', 'reference', 'amount', 'sub'],
-      ...recentTransactions.map(r => [
-        r.type,
-        formatCsvDate(r.date),
-        String(r.machine_id ?? ''),
-        safeCsv(r.location || '-'),
-        safeCsv(r.ref),
-        String(r.amount),
-        safeCsv(r.sub),
-      ]),
-    ];
+function exportCsv() {
+  const rows = [
+    ['type', 'txn_date', 'machine_id', 'location', 'reference', 'amount', 'sub'],
+    ...recentTransactions.map(r => [
+      r.type,
+      r.date,
+      String(r.machine_id),
+      safeCsv(r.location || '-'),
+      safeCsv(r.ref),
+      String(r.amount),
+      safeCsv(r.sub),
+    ]),
+  ];
 
-    const csv = rows.map(row => row.map(csvCell).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const csv = rows.map(row => row.map(csvCell).join(',')).join('\n');
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `deanice-dashboard-${selectedMonth}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  // ใส่ UTF-8 BOM เพื่อให้ Excel อ่านภาษาไทยถูก
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
 
-  const headerStyle: React.CSSProperties = {
-    ...styles.headerWrap,
-    flexDirection: isMobile ? 'column' : 'row',
-    alignItems: isMobile ? 'stretch' : 'flex-start',
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `deanice-dashboard-${today()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+  const pageStyle: React.CSSProperties = {
+    ...styles.page,
+    padding: isMobile ? 12 : styles.page.padding,
   };
 
-  const actionWrapStyle: React.CSSProperties = {
+  const containerStyle: React.CSSProperties = {
+    ...styles.container,
+    width: '100%',
+  };
+
+  const titleStyle: React.CSSProperties = {
+    ...styles.title,
+    fontSize: isMobile ? 28 : styles.title.fontSize,
+    lineHeight: isMobile ? 1.15 : 1.05,
+  };
+
+  const subtitleStyle: React.CSSProperties = {
+    ...styles.subtitle,
+    fontSize: isMobile ? 14 : styles.subtitle.fontSize,
+  };
+
+  const actionWrapStyle : React.CSSProperties = {
     ...styles.actionWrap,
-    justifyContent: isMobile ? 'stretch' : 'flex-end',
     width: isMobile ? '100%' : undefined,
+    justifyContent: isMobile ? 'stretch' : styles.actionWrap.justifyContent,
   };
 
   const actionButtonStyle = (base: React.CSSProperties): React.CSSProperties => ({
     ...base,
     flex: isMobile ? '1 1 calc(50% - 8px)' : undefined,
-    padding: isMobile ? '14px 10px' : base.padding,
-    fontSize: isMobile ? 15 : undefined,
+    width: isMobile ? 'calc(50% - 8px)' : undefined,
+    minHeight: isMobile ? 46 : undefined,
+    fontSize: isMobile ? 14 : undefined,
   });
 
-  const toolbarStyle: React.CSSProperties = {
+  const toolbarRowStyle: React.CSSProperties = {
     ...styles.toolbarRow,
     flexDirection: isMobile ? 'column' : 'row',
     alignItems: isMobile ? 'stretch' : undefined,
@@ -653,14 +567,9 @@ export default function Page() {
     gridTemplateColumns: isMobile ? '1fr' : styles.tableGrid.gridTemplateColumns,
   };
 
-  const chartHeight = isMobile ? 260 : 340;
-
   const mobileChartWrap: React.CSSProperties = {
     width: '100%',
-    height: chartHeight,
-    minWidth: 0,
-    overflowX: isMobile ? 'auto' : 'hidden',
-    overflowY: 'hidden',
+    height: isMobile ? 260 : 340,
   };
 
   const panelStyle: React.CSSProperties = {
@@ -668,20 +577,46 @@ export default function Page() {
     padding: isMobile ? 14 : styles.panel.padding,
   };
 
+  const sectionStyle: React.CSSProperties = {
+    ...styles.section,
+    padding: isMobile ? 14 : styles.section.padding,
+  };
+
+  const rowStyle: React.CSSProperties = {
+    ...styles.row,
+    flexDirection: isMobile ? 'column' : 'row',
+    alignItems: isMobile ? 'stretch' : styles.row.alignItems,
+  };
+
+  const rowRightStyle: React.CSSProperties = {
+    ...styles.rowRight,
+    alignSelf: isMobile ? 'flex-start' : undefined,
+  };
+
+  const summaryTextStyle: React.CSSProperties = {
+    ...styles.summaryText,
+    fontSize: isMobile ? 14 : styles.summaryText.fontSize,
+    lineHeight: isMobile ? 1.8 : styles.summaryText.lineHeight,
+  };
+
+  const modalBoxStyle: React.CSSProperties = {
+    ...styles.modalBox,
+    maxWidth: isMobile ? '100%' : styles.modalBox.maxWidth,
+    padding: isMobile ? 16 : styles.modalBox.padding,
+  };
+
   const tableStyle: React.CSSProperties = {
     ...styles.table,
-    minWidth: isMobile ? 820 : undefined,
+    minWidth: isMobile ? 760 : undefined,
   };
 
   return (
-    <main style={styles.page}>
-      <div style={styles.container}>
-        <div style={headerStyle}>
+    <main style={pageStyle}>
+      <div style={containerStyle}>
+        <div style={styles.headerWrap}>
           <div>
-            <h1 style={{...styles.title, fontSize: isMobile ? 30 : styles.title.fontSize}}>DeanIce Dashboard Pro</h1>
-            <div style={{...styles.subtitle, fontSize: isMobile ? 15 : styles.subtitle.fontSize}}>
-              เชื่อม Supabase สำเร็จแล้ว · Monthly P&amp;L · MTD/YTD · ใช้งานจริง
-            </div>
+            <h1 style={titleStyle}>DeanIce Dashboard Pro</h1>
+            <div style={subtitleStyle}>เชื่อม Supabase สำเร็จแล้ว · พร้อมใช้งานจริง</div>
           </div>
 
           <div style={actionWrapStyle}>
@@ -696,7 +631,7 @@ export default function Page() {
         {loading && <Box>Loading...</Box>}
         {error && <Box bg="#7f1d1d">Error: {error}</Box>}
 
-        <div style={toolbarStyle}>
+        <div style={toolbarRowStyle}>
           <div style={filterRowStyle}>
             <button
               onClick={() => setSelMachine(null)}
@@ -716,71 +651,62 @@ export default function Page() {
             ))}
           </div>
 
-          <div style={styles.monthPickerWrap}>
-            <span style={styles.monthPickerLabel}>เลือกเดือน</span>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              style={styles.monthSelect}
-            >
-              {monthOptions.map(m => (
-                <option key={m} value={m}>{formatMonthLabel(m)}</option>
-              ))}
-            </select>
+          <div style={filterRowStyle}>
+            <button onClick={() => setRange('7d')} style={pillButtonStyle('#22c55e', '#000', range === '7d')}>7 วัน</button>
+            <button onClick={() => setRange('30d')} style={pillButtonStyle('#22c55e', '#000', range === '30d')}>30 วัน</button>
+            <button onClick={() => setRange('month')} style={pillButtonStyle('#22c55e', '#000', range === 'month')}>เดือนนี้</button>
+            <button onClick={() => setRange('all')} style={pillButtonStyle('#22c55e', '#000', range === 'all')}>ทั้งหมด</button>
           </div>
         </div>
 
         <div style={responsiveKpiGrid}>
           <KpiCard title="จำนวนตู้" value={String(db.machines.length)} sub={topMachine ? `Top: ${topMachine.name}` : '-'} compact={isMobile} />
-          <KpiCard title={`${selectedMonthLabel} Revenue`} value={`฿${fmt(totalRevenue)}`} sub={`Ksher ฿${fmt(totalKsher)} | Coin ฿${fmt(totalCoin)}`} compact={isMobile} />
-          <KpiCard title={`${selectedMonthLabel} Expense`} value={`฿${fmt(totalExp)}`} sub={`Fixed ฿${fmt(masterExpense)} | Variable ฿${fmt(actualExpense)}`} compact={isMobile} />
-          <KpiCard title={`${selectedMonthLabel} Profit`} value={`฿${fmt(grossProfit)}`} sub={`Conservative ฿${fmt(conservativeProfit)}`} compact={isMobile} />
+          <KpiCard title="รายรับ Ksher" value={`฿${fmt(totalKsher)}`} sub={`เครดิตรวม ฿${fmt(totalCredit)}`} compact={isMobile} />
+          <KpiCard title="รายรับเหรียญ" value={`฿${fmt(totalCoin)}`} sub="บันทึกจากทีมงาน" compact={isMobile} />
+          <KpiCard title="กำไรสุทธิ" value={`฿${fmt(grossProfit)}`} sub={`Conservative ฿${fmt(conservativeProfit)}`} compact={isMobile} />
         </div>
 
         <div style={responsiveKpiGrid}>
-          <KpiCard title="MTD Revenue" value={`฿${fmt(totalRevenue)}`} sub={`MoM Revenue ${momRevenueGrowth.toFixed(1)}%`} compact={isMobile} />
-          <KpiCard title="MTD Profit" value={`฿${fmt(grossProfit)}`} sub={`${breakEvenText}`} compact={isMobile} />
-          <KpiCard title="YTD Revenue" value={`฿${fmt(ytdRevenue)}`} sub={`YTD Expense ฿${fmt(ytdExpense)}`} compact={isMobile} />
-          <KpiCard title="YTD Profit" value={`฿${fmt(ytdProfit)}`} sub={`MoM Profit ${momProfitGrowth.toFixed(1)}%`} compact={isMobile} />
-        </div>
-
-        <div style={responsiveKpiGrid}>
-          <KpiCard title={isCurrentMonth ? 'วันนี้' : 'Today'} value={`฿${fmt(isCurrentMonth ? todayKsher + todayCoin : 0)}`} sub={`กำไรวันนี้ ฿${fmt(isCurrentMonth ? todayProfit : 0)}`} compact={isMobile} />
+          <KpiCard title="วันนี้" value={`฿${fmt(todayKsher + todayCoin)}`} sub={`กำไรวันนี้ ฿${fmt(todayProfit)}`} compact={isMobile} />
+          <KpiCard title="เดือนนี้" value={`฿${fmt(monthKsher + monthCoin)}`} sub={`ค่าใช้จ่ายเดือนนี้ ฿${fmt(monthExp)}`} compact={isMobile} />
           <KpiCard title="จำนวนรายการ Ksher" value={String(totalTransactions)} sub={`เฉลี่ย/รายการ ฿${fmt(avgKsherPerTx)}`} compact={isMobile} />
           <KpiCard title="Top Machine" value={topMachine ? topMachine.name : '-'} sub={topMachine ? `Profit ฿${fmt(topMachine.profit)}` : '-'} compact={isMobile} />
-          <KpiCard title="YTD Conservative" value={`฿${fmt(ytdConservativeProfit)}`} sub="อิงยอดเครดิตเข้า" compact={isMobile} />
         </div>
 
         <div style={responsiveChartGrid}>
-          <Panel title={`แนวโน้มรายวัน ${selectedMonthLabel}`} rightText="Ksher / Credit / Coin / Expense / Profit" compact={isMobile}>
+          <Panel title={`แนวโน้มรายวัน ${range === '7d' ? '7' : '14'} วันล่าสุด`} rightText="Ksher / Credit / Coin / Expense / Profit" compact={isMobile}>
             <div style={mobileChartWrap}>
-              <LineChart width={chartWidth} height={chartHeight} data={chartDays} margin={{ top: 10, right: 20, left: 0, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="date" stroke="#94a3b8" interval={isMobile ? 4 : 2} />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend />
-                <Line type="monotone" dataKey="coin" stroke="#38bdf8" strokeWidth={2} dot={false} name="Coin" />
-                <Line type="monotone" dataKey="credit" stroke="#60a5fa" strokeWidth={2} dot={false} name="Credit" />
-                <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} dot={false} name="Expense" />
-                <Line type="monotone" dataKey="ksher" stroke="#f59e0b" strokeWidth={2} dot={false} name="Ksher" />
-                <Line type="monotone" dataKey="profit" stroke="#22c55e" strokeWidth={3} dot={false} name="Profit" />
-              </LineChart>
+              <ResponsiveContainer>
+                <LineChart data={chartDays}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="date" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend />
+                  <Line type="monotone" dataKey="ksher" stroke="#f59e0b" strokeWidth={3} dot={false} name="Ksher" />
+                  <Line type="monotone" dataKey="credit" stroke="#60a5fa" strokeWidth={2} dot={false} name="Credit" />
+                  <Line type="monotone" dataKey="coin" stroke="#38bdf8" strokeWidth={3} dot={false} name="Coin" />
+                  <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} dot={false} name="Expense" />
+                  <Line type="monotone" dataKey="profit" stroke="#22c55e" strokeWidth={3} dot={false} name="Profit" />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </Panel>
 
-          <Panel title={`YTD Monthly P&L ${currentYear}`} rightText="รวม Fixed cost จาก expense_master" compact={isMobile}>
+          <Panel title="สรุปรายเดือน" rightText="แนวโน้มสะสม" compact={isMobile}>
             <div style={mobileChartWrap}>
-              <BarChart width={chartWidth} height={chartHeight} data={monthChart} margin={{ top: 10, right: 20, left: 0, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="month" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend />
-                <Bar dataKey="coin" fill="#38bdf8" name="Coin" />
-                <Bar dataKey="expense" fill="#ef4444" name="Expense" />
-                <Bar dataKey="ksher" fill="#f59e0b" name="Ksher" />
-              </BarChart>
+              <ResponsiveContainer>
+                <BarChart data={monthChart}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="month" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend />
+                  <Bar dataKey="ksher" fill="#f59e0b" name="Ksher" />
+                  <Bar dataKey="coin" fill="#38bdf8" name="Coin" />
+                  <Bar dataKey="expense" fill="#ef4444" name="Expense" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </Panel>
         </div>
@@ -788,7 +714,7 @@ export default function Page() {
         <div style={responsiveBottomGrid}>
           <Section title="Ksher ล่าสุด" compact={isMobile}>
             {filteredKsher.length === 0 ? (
-              <EmptyText text="ยังไม่มีข้อมูล Ksher ในเดือนนี้" />
+              <EmptyText text="ยังไม่มีข้อมูล Ksher" />
             ) : (
               filteredKsher.slice(0, 10).map((row) => (
                 <Row
@@ -804,7 +730,7 @@ export default function Page() {
 
           <Section title="รายรับเหรียญ" compact={isMobile}>
             {filteredCoin.length === 0 ? (
-              <EmptyText text="ยังไม่มีข้อมูลเหรียญในเดือนนี้" />
+              <EmptyText text="ยังไม่มีข้อมูลเหรียญ" />
             ) : (
               filteredCoin.slice(0, 10).map((row) => (
                 <Row
@@ -818,63 +744,50 @@ export default function Page() {
             )}
           </Section>
 
-          <Section title="รายจ่าย / Fixed Cost" compact={isMobile}>
-            {filteredExp.length === 0 && filteredMasterExp.length === 0 ? (
-              <EmptyText text="ยังไม่มีรายจ่ายในเดือนนี้" />
+          <Section title="รายจ่าย" compact={isMobile}>
+            {filteredExp.length === 0 ? (
+              <EmptyText text="ยังไม่มีรายจ่าย" />
             ) : (
-              <>
-                {filteredMasterExp.slice(0, 5).map((row) => (
-                  <Row
-                    compact={isMobile}
-                    key={`master-${row.id}`}
-                    left={`${row.expense_type || row.expense_category || 'Fixed Cost'} | ${selectedMonth}-01`}
-                    right={`฿${fmt(Number(row.amount || 0))}`}
-                    sub={`${row.expense_category || '-'} | ${row.recurring ? `Recurring ${row.recurring_type || ''}` : 'One-time'} | ${row.note || ''}`}
-                  />
-                ))}
-                {filteredExp.slice(0, 10).map((row) => (
-                  <Row
-                    compact={isMobile}
-                    key={row.id}
-                    left={`${row.category || '-'} | ${row.date || '-'}`}
-                    right={`฿${fmt(Number(row.amount || 0))}`}
-                    sub={row.note || ''}
-                  />
-                ))}
-              </>
+              filteredExp.slice(0, 10).map((row) => (
+                <Row
+                  compact={isMobile}
+                  key={row.id}
+                  left={`${row.category || '-'} | ${row.date || '-'}`}
+                  right={`฿${fmt(Number(row.amount || 0))}`}
+                  sub={row.note || ''}
+                />
+              ))
             )}
           </Section>
         </div>
 
         <div style={responsiveSummaryGrid}>
-          <Panel title="Executive Monthly Insight" compact={isMobile}>
-            <div style={styles.summaryText}>
-              <div>เดือนที่เลือก: <b>{selectedMonthLabel}</b></div>
+          <Panel title="Executive Summary" compact={isMobile}>
+            <div style={summaryTextStyle}>
+              <div>ช่วงเวลาที่เลือก: <b>{rangeLabel(range)}</b></div>
               <div>รายรับรวม: <b>฿{fmt(totalRevenue)}</b></div>
-              <div>ค่าใช้จ่ายรวม: <b>฿{fmt(totalExp)}</b></div>
-              <div>Fixed Cost: <b>฿{fmt(masterExpense)}</b></div>
-              <div>Variable Cost: <b>฿{fmt(actualExpense)}</b></div>
+              <div>รายรับ Ksher: <b>฿{fmt(totalKsher)}</b></div>
+              <div>ยอดเครดิตเข้า: <b>฿{fmt(totalCredit)}</b></div>
+              <div>รายรับเหรียญ: <b>฿{fmt(totalCoin)}</b></div>
+              <div>รายจ่ายรวม: <b>฿{fmt(totalExp)}</b></div>
               <div>กำไรสุทธิ: <b>฿{fmt(grossProfit)}</b></div>
-              <div>MoM Revenue Growth: <b>{momRevenueGrowth.toFixed(1)}%</b></div>
-              <div>MoM Profit Growth: <b>{momProfitGrowth.toFixed(1)}%</b></div>
-              <div>Break-even: <b>{breakEvenText}</b></div>
+              <div>กำไร conservative: <b>฿{fmt(conservativeProfit)}</b></div>
             </div>
           </Panel>
 
-          <Panel title="YTD Summary" compact={isMobile}>
-            <div style={styles.summaryText}>
-              <div>ปี: <b>{currentYear}</b></div>
-              <div>YTD Revenue: <b>฿{fmt(ytdRevenue)}</b></div>
-              <div>YTD Expense: <b>฿{fmt(ytdExpense)}</b></div>
-              <div>YTD Profit: <b>฿{fmt(ytdProfit)}</b></div>
-              <div>YTD Conservative Profit: <b>฿{fmt(ytdConservativeProfit)}</b></div>
+          <Panel title="Quick Insight" compact={isMobile}>
+            <div style={summaryTextStyle}>
+              <div>วันนี้มียอดรวม: <b>฿{fmt(todayKsher + todayCoin)}</b></div>
+              <div>เดือนนี้มียอดรวม: <b>฿{fmt(monthKsher + monthCoin)}</b></div>
+              <div>ค่าใช้จ่ายเดือนนี้: <b>฿{fmt(monthExp)}</b></div>
+              <div>จำนวนรายการ Ksher: <b>{totalTransactions}</b></div>
               <div>Top Machine: <b>{topMachine ? topMachine.name : '-'}</b></div>
             </div>
           </Panel>
         </div>
 
         <div style={responsiveTableGrid}>
-          <Panel title="Top Machine Ranking" rightText={selectedMonthLabel} compact={isMobile}>
+          <Panel title="Top Machine Ranking" rightText="จัดอันดับจากกำไร" compact={isMobile}>
             <div style={styles.tableWrap}>
               <table style={tableStyle}>
                 <thead>
@@ -907,7 +820,7 @@ export default function Page() {
             </div>
           </Panel>
 
-          <Panel title="Monthly Transactions" rightText={`${recentTransactions.length} รายการ`} compact={isMobile}>
+          <Panel title="Recent Transactions" rightText="ล่าสุด 20 รายการ" compact={isMobile}>
             <div style={styles.tableWrap}>
               <table style={tableStyle}>
                 <thead>
@@ -915,7 +828,7 @@ export default function Page() {
                     <th style={styles.th}>Type</th>
                     <th style={styles.th}>Txn Date</th>
                     <th style={styles.th}>Machine</th>
-                    <th style={styles.th}>Location</th>
+					<th style={styles.th}>Location</th>
                     <th style={styles.th}>Reference</th>
                     <th style={styles.th}>Amount</th>
                     <th style={styles.th}>Detail</th>
@@ -926,8 +839,8 @@ export default function Page() {
                     <tr key={row.key}>
                       <td style={styles.td}>{row.type}</td>
                       <td style={styles.td}>{row.date}</td>
-                      <td style={styles.td}>{row.machine_id ?? '-'}</td>
-                      <td style={styles.td}>{row.location}</td>
+                      <td style={styles.td}>{row.machine_id}</td>
+					  <td style={styles.td}>{row.location}</td>
                       <td style={styles.td}>{row.ref}</td>
                       <td style={styles.td}>{row.amount < 0 ? `-฿${fmt(Math.abs(row.amount))}` : `฿${fmt(row.amount)}`}</td>
                       <td style={styles.td}>{row.sub}</td>
@@ -943,7 +856,7 @@ export default function Page() {
       {showCoinForm && (
         <Modal title="บันทึกรายรับเหรียญ" onClose={() => setShowCoinForm(false)}>
           <MachineSelect machines={db.machines} value={coinForm.machine_id} onChange={(v) => setCoinForm({ ...coinForm, machine_id: v })} />
-          <Input label="วันที่รับเหรียญ" type="date" value={coinForm.week_start} onChange={(v) => setCoinForm({ ...coinForm, week_start: v })} />
+          <Input label="วันที่เริ่มสัปดาห์" type="date" value={coinForm.week_start} onChange={(v) => setCoinForm({ ...coinForm, week_start: v })} />
           <Input label="จำนวนเงิน" type="number" value={coinForm.amount} onChange={(v) => setCoinForm({ ...coinForm, amount: v })} />
           <Input label="หมายเหตุ" value={coinForm.note} onChange={(v) => setCoinForm({ ...coinForm, note: v })} />
           <button onClick={addCoin} style={btnBlue}>บันทึก</button>
@@ -981,76 +894,29 @@ function today() {
   return new Date().toISOString().split('T')[0];
 }
 
-function getKsherTxnDate(row: IncomeKsher) {
-  return row.txn_date || row.date || row.settlement_date || '';
-}
-
-function buildDaysInMonth(month: string) {
-  const [year, monthNo] = month.split('-').map(Number);
-  const lastDay = new Date(year, monthNo, 0).getDate();
+function buildLastNDays(n: number) {
   const arr: string[] = [];
-  for (let i = 1; i <= lastDay; i++) {
-    arr.push(`${month}-${String(i).padStart(2, '0')}`);
+  const d = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const x = new Date(d);
+    x.setDate(d.getDate() - i);
+    arr.push(x.toISOString().split('T')[0]);
   }
   return arr;
 }
 
-function buildMonthsYtd(year: string, selectedMonth: string) {
-  const arr: string[] = [];
-  for (let i = 1; i <= 12; i++) {
-    const m = `${year}-${String(i).padStart(2, '0')}`;
-    if (m <= selectedMonth) arr.push(m);
-  }
-  return arr;
+function getRangeStart(range: RangeKey) {
+  const d = new Date();
+  if (range === '7d') d.setDate(d.getDate() - 6);
+  if (range === '30d') d.setDate(d.getDate() - 29);
+  return d.toISOString().split('T')[0];
 }
 
-function buildMonthOptions(
-  ksher: IncomeKsher[],
-  coin: IncomeCoin[],
-  expenses: Expense[],
-  masters: ExpenseMaster[]
-) {
-  const set = new Set<string>();
-  set.add(today().slice(0, 7));
-
-  ksher.forEach(x => {
-    const d = getKsherTxnDate(x);
-    if (d) set.add(d.slice(0, 7));
-  });
-  coin.forEach(x => {
-    if (x.week_start) set.add(x.week_start.slice(0, 7));
-  });
-  expenses.forEach(x => {
-    if (x.date) set.add(x.date.slice(0, 7));
-  });
-  masters.forEach(x => {
-    if (x.expense_date) set.add(x.expense_date.slice(0, 7));
-  });
-
-  return Array.from(set).sort((a, b) => b.localeCompare(a));
-}
-
-function expenseMasterForMonth(rows: ExpenseMaster[], month: string, machineId: number | null) {
-  return rows
-    .filter(r => !machineId || r.machine_id === machineId || r.machine_id === null)
-    .filter(r => {
-      const rowMonth = (r.expense_date || '').slice(0, 7);
-      if (r.recurring && String(r.recurring_type || '').toUpperCase() === 'MONTHLY') {
-        return rowMonth <= month;
-      }
-      return rowMonth === month;
-    });
-}
-
-function addMonths(month: string, offset: number) {
-  const [y, m] = month.split('-').map(Number);
-  const d = new Date(y, m - 1 + offset, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function calcGrowth(current: number, previous: number) {
-  if (!previous || previous === 0) return current > 0 ? 100 : 0;
-  return ((current - previous) / Math.abs(previous)) * 100;
+function inRange(dateStr: string, range: RangeKey, rangeStart: string, monthPrefix: string) {
+  if (!dateStr) return false;
+  if (range === 'all') return true;
+  if (range === 'month') return dateStr.startsWith(monthPrefix);
+  return dateStr >= rangeStart;
 }
 
 function shortDate(date: string) {
@@ -1058,17 +924,11 @@ function shortDate(date: string) {
   return d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' });
 }
 
-function formatMonthLabel(month: string) {
-  const [y, m] = month.split('-').map(Number);
-  const d = new Date(y, m - 1, 1);
-  return d.toLocaleDateString('th-TH', { month: 'short', year: 'numeric' });
-}
-
-function formatCsvDate(date: string) {
-  if (!date) return '';
-  const [y, m, d] = date.split('-');
-  if (!y || !m || !d) return date;
-  return `${d}/${m}/${String(Number(y) + 543).slice(-2)}`;
+function rangeLabel(range: RangeKey) {
+  if (range === '7d') return '7 วันล่าสุด';
+  if (range === '30d') return '30 วันล่าสุด';
+  if (range === 'month') return 'เดือนนี้';
+  return 'ทั้งหมด';
 }
 
 function safeCsv(value: string) {
@@ -1090,12 +950,12 @@ function fmtNum(n: number) {
   });
 }
 
-function KpiCard({ title, value, sub, compact }: { title: string; value: string; sub?: string; compact?: boolean }) {
+function KpiCard({ title, value, sub, compact = false }: { title: string; value: string; sub?: string; compact?: boolean }) {
   return (
-    <div style={{...styles.kpiCard, padding: compact ? 14 : styles.kpiCard.padding}}>
-      <div style={{...styles.kpiTitle, fontSize: compact ? 12 : styles.kpiTitle.fontSize}}>{title}</div>
-      <div style={{...styles.kpiValue, fontSize: compact ? 24 : styles.kpiValue.fontSize}}>{value}</div>
-      <div style={{...styles.kpiSub, fontSize: compact ? 12 : styles.kpiSub.fontSize}}>{sub || '-'}</div>
+    <div style={{ ...styles.kpiCard, padding: compact ? 14 : styles.kpiCard.padding }}>
+      <div style={{ ...styles.kpiTitle, fontSize: compact ? 12 : styles.kpiTitle.fontSize }}>{title}</div>
+      <div style={{ ...styles.kpiValue, fontSize: compact ? 22 : styles.kpiValue.fontSize, lineHeight: 1.15 }}>{value}</div>
+      <div style={{ ...styles.kpiSub, fontSize: compact ? 12 : styles.kpiSub.fontSize }}>{sub || '-'}</div>
     </div>
   );
 }
@@ -1104,7 +964,7 @@ function Panel({
   title,
   children,
   rightText,
-  compact,
+  compact = false,
 }: {
   title: string;
   children: React.ReactNode;
@@ -1112,33 +972,33 @@ function Panel({
   compact?: boolean;
 }) {
   return (
-    <div style={{...styles.panel, padding: compact ? 14 : styles.panel.padding}}>
-      <div style={{...styles.panelHeader, alignItems: compact ? 'flex-start' : 'center'}}>
-        <div style={{...styles.panelTitle, fontSize: compact ? 17 : styles.panelTitle.fontSize}}>{title}</div>
-        <div style={styles.panelRight}>{rightText || ''}</div>
+    <div style={{ ...styles.panel, padding: compact ? 14 : styles.panel.padding }}>
+      <div style={{ ...styles.panelHeader, alignItems: compact ? 'flex-start' : styles.panelHeader.alignItems, flexDirection: compact ? 'column' : 'row' }}>
+        <div style={{ ...styles.panelTitle, fontSize: compact ? 16 : styles.panelTitle.fontSize }}>{title}</div>
+        <div style={{ ...styles.panelRight, fontSize: compact ? 11 : styles.panelRight.fontSize }}>{rightText || ''}</div>
       </div>
       {children}
     </div>
   );
 }
 
-function Section({ title, children, compact }: { title: string; children: React.ReactNode; compact?: boolean }) {
+function Section({ title, children, compact = false }: { title: string; children: React.ReactNode; compact?: boolean }) {
   return (
-    <div style={{...styles.section, padding: compact ? 14 : styles.section.padding}}>
-      <div style={{...styles.sectionTitle, fontSize: compact ? 17 : styles.sectionTitle.fontSize}}>{title}</div>
+    <div style={{ ...styles.section, padding: compact ? 14 : styles.section.padding }}>
+      <div style={{ ...styles.sectionTitle, fontSize: compact ? 16 : styles.sectionTitle.fontSize }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   );
 }
 
-function Row({ left, right, sub, compact }: { left: string; right: string; sub?: string; compact?: boolean }) {
+function Row({ left, right, sub, compact = false }: { left: string; right: string; sub?: string; compact?: boolean }) {
   return (
-    <div style={{...styles.row, flexDirection: compact ? 'column' : 'row'}}>
+    <div style={{ ...styles.row, flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : styles.row.alignItems }}>
       <div>
-        <div style={{...styles.rowLeft, fontSize: compact ? 13 : styles.rowLeft.fontSize}}>{left}</div>
+        <div style={{ ...styles.rowLeft, wordBreak: 'break-word' }}>{left}</div>
         {sub ? <div style={styles.rowSub}>{sub}</div> : null}
       </div>
-      <div style={{...styles.rowRight, alignSelf: compact ? 'flex-end' : undefined}}>{right}</div>
+      <div style={{ ...styles.rowRight, alignSelf: compact ? 'flex-start' : undefined }}>{right}</div>
     </div>
   );
 }
@@ -1339,26 +1199,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 8,
     flexWrap: 'wrap',
-  },
-  monthPickerWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  monthPickerLabel: {
-    color: '#94a3b8',
-    fontWeight: 700,
-    fontSize: 13,
-  },
-  monthSelect: {
-    padding: '10px 14px',
-    borderRadius: 12,
-    border: '1px solid #334155',
-    background: '#111827',
-    color: '#fff',
-    fontWeight: 800,
-    outline: 'none',
   },
   kpiGrid: {
     display: 'grid',
