@@ -204,11 +204,46 @@ export default function Page() {
   }
 
   async function addCoin() {
+    const machineId = Number(coinForm.machine_id);
+    const amount = Number(coinForm.amount);
+    const note = coinForm.note?.trim() || null;
+
+    if (!machineId || !coinForm.week_start || !amount || amount <= 0) {
+      alert('กรุณาระบุ ตู้ / วันที่ / จำนวนเงิน ให้ถูกต้อง');
+      return;
+    }
+
+    // กันข้อมูลซ้ำก่อน insert: machine_id + week_start + amount + note
+    let duplicateQuery = supabase
+      .from('income_coin')
+      .select('id')
+      .eq('machine_id', machineId)
+      .eq('week_start', coinForm.week_start)
+      .eq('amount', amount)
+      .limit(1);
+
+    duplicateQuery = note === null ? duplicateQuery.is('note', null) : duplicateQuery.eq('note', note);
+
+    const { data: existing, error: checkError } = await duplicateQuery;
+
+    if (checkError) {
+      alert('ตรวจสอบข้อมูลซ้ำไม่สำเร็จ: ' + checkError.message);
+      return;
+    }
+
+    if (existing && existing.length > 0) {
+      alert('พบรายการรายรับเหรียญซ้ำ ระบบไม่บันทึกซ้ำให้ครับ');
+      setShowCoinForm(false);
+      setCoinForm(prev => ({ ...prev, amount: '', note: '' }));
+      await loadData();
+      return;
+    }
+
     const { error } = await supabase.from('income_coin').insert({
-      machine_id: Number(coinForm.machine_id),
+      machine_id: machineId,
       week_start: coinForm.week_start,
-      amount: Number(coinForm.amount),
-      note: coinForm.note,
+      amount,
+      note,
     });
 
     if (error) {
@@ -740,15 +775,22 @@ export default function Page() {
         <div style={responsiveKpiGrid}>
           <KpiCard title="MTD Revenue" value={`฿${fmt(totalRevenue)}`} sub={`MoM Revenue ${momRevenueGrowth.toFixed(1)}%`} compact={isMobile} />
           <KpiCard title="MTD Profit" value={`฿${fmt(grossProfit)}`} sub={`${breakEvenText}`} compact={isMobile} />
-          <KpiCard title="YTD Revenue" value={`฿${fmt(ytdRevenue)}`} sub={`YTD Expense ฿${fmt(ytdExpense)}`} compact={isMobile} />
+          <KpiCard title="YTD Revenue" value={`฿${fmt(ytdRevenue)}`} sub={`Expense ฿${fmt(ytdExpense)} | Profit ฿${fmt(ytdProfit)}`} compact={isMobile} />
           <KpiCard title="YTD Profit" value={`฿${fmt(ytdProfit)}`} sub={`MoM Profit ${momProfitGrowth.toFixed(1)}%`} compact={isMobile} />
         </div>
 
         <div style={responsiveKpiGrid}>
+          <KpiCard title="YTD Ksher / Online" value={`฿${fmt(ytdKsher)}`} sub={`Credit ฿${fmt(ytdCredit)}`} compact={isMobile} />
+          <KpiCard title="YTD Coin" value={`฿${fmt(ytdCoin)}`} sub="รายรับเหรียญสะสมทั้งปี" compact={isMobile} />
           <KpiCard title={isCurrentMonth ? 'วันนี้' : 'Today'} value={`฿${fmt(isCurrentMonth ? todayKsher + todayCoin : 0)}`} sub={`กำไรวันนี้ ฿${fmt(isCurrentMonth ? todayProfit : 0)}`} compact={isMobile} />
+          <KpiCard title="YTD Conservative" value={`฿${fmt(ytdConservativeProfit)}`} sub="อิงยอดเครดิตเข้า" compact={isMobile} />
+        </div>
+
+        <div style={responsiveKpiGrid}>
           <KpiCard title="จำนวนรายการ Ksher" value={String(totalTransactions)} sub={`เฉลี่ย/รายการ ฿${fmt(avgKsherPerTx)}`} compact={isMobile} />
           <KpiCard title="Top Machine" value={topMachine ? topMachine.name : '-'} sub={topMachine ? `Profit ฿${fmt(topMachine.profit)}` : '-'} compact={isMobile} />
-          <KpiCard title="YTD Conservative" value={`฿${fmt(ytdConservativeProfit)}`} sub="อิงยอดเครดิตเข้า" compact={isMobile} />
+          <KpiCard title="YTD Expense" value={`฿${fmt(ytdExpense)}`} sub={`Fixed/Variable รวมถึง ${selectedMonthLabel}`} compact={isMobile} />
+          <KpiCard title="Duplicate Guard" value="ON" sub="Coin: machine+date+amount+note" compact={isMobile} />
         </div>
 
         <div style={responsiveChartGrid}>
@@ -864,6 +906,9 @@ export default function Page() {
           <Panel title="YTD Summary" compact={isMobile}>
             <div style={styles.summaryText}>
               <div>ปี: <b>{currentYear}</b></div>
+              <div>YTD Ksher / Online: <b>฿{fmt(ytdKsher)}</b></div>
+              <div>YTD Credit Received: <b>฿{fmt(ytdCredit)}</b></div>
+              <div>YTD Coin: <b>฿{fmt(ytdCoin)}</b></div>
               <div>YTD Revenue: <b>฿{fmt(ytdRevenue)}</b></div>
               <div>YTD Expense: <b>฿{fmt(ytdExpense)}</b></div>
               <div>YTD Profit: <b>฿{fmt(ytdProfit)}</b></div>
