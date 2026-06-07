@@ -1,27 +1,42 @@
 // app/api/issues/route.js
 
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 function cleanText(value) {
-  if (!value) return null;
-  return String(value).trim() || null;
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
 }
 
 function cleanNumber(value) {
   if (value === null || value === undefined || value === '') return null;
-  const n = Number(value);
+  const n = Number(String(value).replace(/,/g, '').trim());
   return Number.isFinite(n) ? n : null;
+}
+
+function cleanDateTime(value) {
+  const text = cleanText(value);
+  if (!text) return null;
+
+  const d = new Date(text);
+
+  if (Number.isNaN(d.getTime())) {
+    return null;
+  }
+
+  return d.toISOString();
 }
 
 function buildTelegramMessage(ticket) {
   return `
 🚨 DeanIce Customer Issue
 
-สถานะ: ${ticket.status}
-Ticket ID: #${ticket.id}
+สถานะ: ${ticket.status || '-'}
+Ticket ID: #${ticket.id || '-'}
 
 ตู้: Machine ${ticket.machine_id || '-'} - ${ticket.location || '-'}
 ปัญหา: ${ticket.issue_type || '-'}
@@ -34,11 +49,8 @@ Ticket ID: #${ticket.id}
 เวลาที่ลูกค้าแจ้งว่าเกิดปัญหา:
 ${ticket.transaction_time || '-'}
 
-รายละเอียด:
+รายละเอียด / Ref / หมายเหตุ:
 ${ticket.description || '-'}
-
-สลิป/รูป:
-${ticket.slip_url || '-'}
 
 Action:
 ตรวจสอบรายการชำระเงิน / สถานะตู้ / พิจารณาคืนเงิน
@@ -54,28 +66,33 @@ async function sendTelegram(text) {
     return;
   }
 
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  try {
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: false,
-    }),
-  });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true,
+      }),
+    });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error('Telegram send failed:', errText);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('Telegram send failed:', errText);
+    }
+  } catch (err) {
+    console.error('Telegram error:', err);
   }
 }
 
 export async function POST(req) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     const formData = await req.formData();
 
     const customer_name = cleanText(formData.get('customer_name'));
@@ -86,87 +103,18 @@ export async function POST(req) {
     const issue_type = cleanText(formData.get('issue_type'));
     const payment_amount = cleanNumber(formData.get('payment_amount'));
     const payment_channel = cleanText(formData.get('payment_channel'));
-    const transaction_time = cleanText(formData.get('transaction_time'));
+    const transaction_time = cleanDateTime(formData.get('transaction_time'));
 
     const description = cleanText(formData.get('description'));
-    const file = formData.get('slip');
 
     if (!issue_type) {
       return NextResponse.json(
-        { ok: false, message: 'กรุณาเลือกประเภทปัญหา' },
+        {
+          ok: false,
+          message: 'กรุณาเลือกประเภทปัญหา',
+        },
         { status: 400 }
       );
-    }
-
-    let slip_url = null;
-
-    if (file && typeof file === 'object' && file.size > 0) {
-      const allowedTypes = [
-        'image/jpeg',
-        'image/png',
-        'image/webp',
-        'application/pdf',
-      ];
-
-      if (!allowedTypes.includes(file.type)) {
-        return NextResponse.json(
-          {
-            ok: false,
-            message: 'รองรับเฉพาะไฟล์ JPG, PNG, WEBP หรือ PDF',
-          },
-          { status: 400 }
-        );
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        return NextResponse.json(
-          {
-            ok: false,
-            message: 'ไฟล์ต้องมีขนาดไม่เกิน 5MB',
-          },
-          { status: 400 }
-        );
-      }
-
-      const ext =
-        file.type === 'application/pdf'
-          ? 'pdf'
-          : file.type === 'image/png'
-          ? 'png'
-          : file.type === 'image/webp'
-          ? 'webp'
-          : 'jpg';
-
-      const fileName = `issue-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}.${ext}`;
-
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from('issue-slips')
-        .upload(fileName, buffer, {
-          contentType: file.type,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error('Upload slip failed:', uploadError);
-        return NextResponse.json(
-          {
-            ok: false,
-            message: 'อัปโหลดสลิปไม่สำเร็จ กรุณาลองใหม่',
-          },
-          { status: 500 }
-        );
-      }
-
-      const { data: publicUrlData } = supabaseAdmin.storage
-        .from('issue-slips')
-        .getPublicUrl(fileName);
-
-      slip_url = publicUrlData?.publicUrl || null;
     }
 
     const payload = {
@@ -177,24 +125,31 @@ export async function POST(req) {
       issue_type,
       payment_amount,
       payment_channel,
-      transaction_time: transaction_time || null,
-      slip_url,
+      transaction_time,
+      slip_url: null,
       description,
       status: 'OPEN',
+      admin_note: null,
+      resolved_at: null,
+      updated_at: new Date().toISOString(),
     };
+
+    console.log('DeanIce issue payload:', payload);
 
     const { data, error } = await supabaseAdmin
       .from('customer_issue_ticket')
       .insert(payload)
-      .select()
+      .select('*')
       .single();
 
     if (error) {
-      console.error('Insert issue failed:', error);
+      console.error('Insert customer_issue_ticket failed:', error);
+
       return NextResponse.json(
         {
           ok: false,
-          message: 'บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่',
+          message: `บันทึกข้อมูลไม่สำเร็จ: ${error.message}`,
+          detail: error,
         },
         { status: 500 }
       );
@@ -209,10 +164,11 @@ export async function POST(req) {
     });
   } catch (err) {
     console.error('POST /api/issues failed:', err);
+
     return NextResponse.json(
       {
         ok: false,
-        message: 'ระบบขัดข้อง กรุณาลองใหม่อีกครั้ง',
+        message: `ระบบขัดข้อง: ${err?.message || 'unknown error'}`,
       },
       { status: 500 }
     );
@@ -221,8 +177,9 @@ export async function POST(req) {
 
 export async function GET(req) {
   try {
-    const { searchParams } = new URL(req.url);
+    const supabaseAdmin = getSupabaseAdmin();
 
+    const { searchParams } = new URL(req.url);
     const pin = searchParams.get('pin');
     const status = searchParams.get('status') || 'ALL';
 
@@ -249,11 +206,12 @@ export async function GET(req) {
     const { data, error } = await query;
 
     if (error) {
-      console.error('Fetch issues failed:', error);
+      console.error('Fetch customer_issue_ticket failed:', error);
+
       return NextResponse.json(
         {
           ok: false,
-          message: 'โหลดข้อมูลไม่สำเร็จ',
+          message: `โหลดข้อมูลไม่สำเร็จ: ${error.message}`,
         },
         { status: 500 }
       );
@@ -261,14 +219,15 @@ export async function GET(req) {
 
     return NextResponse.json({
       ok: true,
-      data,
+      data: data || [],
     });
   } catch (err) {
     console.error('GET /api/issues failed:', err);
+
     return NextResponse.json(
       {
         ok: false,
-        message: 'ระบบขัดข้อง',
+        message: `ระบบขัดข้อง: ${err?.message || 'unknown error'}`,
       },
       { status: 500 }
     );
