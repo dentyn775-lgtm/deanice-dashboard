@@ -136,11 +136,11 @@ export async function POST(req) {
 
     console.log('DeanIce issue payload:', payload);
 
-    const { data, error } = await supabaseAdmin
+    // Insert only: do not call .select().single()
+    // This avoids requiring a SELECT RLS policy after insert.
+    const { error } = await supabaseAdmin
       .from('customer_issue_ticket')
-      .insert(payload)
-      .select('*')
-      .single();
+      .insert(payload);
 
     if (error) {
       console.error('Insert customer_issue_ticket failed:', error);
@@ -155,12 +155,19 @@ export async function POST(req) {
       );
     }
 
-    await sendTelegram(buildTelegramMessage(data));
+    const telegramTicket = {
+      ...payload,
+      id: '-',
+    };
+
+    await sendTelegram(buildTelegramMessage(telegramTicket));
 
     return NextResponse.json({
       ok: true,
       message: 'รับเรื่องเรียบร้อยแล้ว',
-      ticket: data,
+      ticket: {
+        id: '-',
+      },
     });
   } catch (err) {
     console.error('POST /api/issues failed:', err);
