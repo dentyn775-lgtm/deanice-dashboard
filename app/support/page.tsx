@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { useState } from 'react';
 
 type SupportForm = {
   customer_name: string;
@@ -20,10 +20,10 @@ type ResultMessage = {
 } | null;
 
 type IssueResponse = {
-  ok?: boolean;
+  ok: boolean;
   message?: string;
   ticket?: {
-    id?: number | string;
+    id: number;
   };
 };
 
@@ -46,10 +46,13 @@ const paymentChannels = [
 ];
 
 export default function SupportPage() {
-  const defaultMachineId = process.env.NEXT_PUBLIC_DEFAULT_MACHINE_ID || '2';
-  const defaultLocation = process.env.NEXT_PUBLIC_SUPPORT_LOCATION || 'BTSV';
+  const defaultMachineId =
+    process.env.NEXT_PUBLIC_DEFAULT_MACHINE_ID || '2';
 
-  const initialForm: SupportForm = {
+  const defaultLocation =
+    process.env.NEXT_PUBLIC_SUPPORT_LOCATION || 'Lotus Gofresh';
+
+  const [form, setForm] = useState<SupportForm>({
     customer_name: '',
     customer_phone: '',
     machine_id: String(defaultMachineId),
@@ -59,11 +62,8 @@ export default function SupportPage() {
     payment_channel: 'QR Payment',
     transaction_time: '',
     description: '',
-  };
+  });
 
-  const [form, setForm] = useState<SupportForm>(initialForm);
-  const [slip, setSlip] = useState<File | null>(null);
-  const [fileInputKey, setFileInputKey] = useState<number>(Date.now());
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<ResultMessage>(null);
 
@@ -74,11 +74,7 @@ export default function SupportPage() {
     }));
   }
 
-  function handleSlipChange(e: ChangeEvent<HTMLInputElement>) {
-    setSlip(e.currentTarget.files?.[0] ?? null);
-  }
-
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setResult(null);
@@ -90,10 +86,6 @@ export default function SupportPage() {
         fd.append(key, value);
       });
 
-      if (slip) {
-        fd.append('slip', slip);
-      }
-
       const res = await fetch('/api/issues', {
         method: 'POST',
         body: fd,
@@ -104,19 +96,27 @@ export default function SupportPage() {
       if (!res.ok || !data.ok) {
         setResult({
           type: 'error',
-          message: data.message || 'ส่งข้อมูลไม่สำเร็จ',
+          message: data.message || 'ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่',
         });
         return;
       }
 
       setResult({
         type: 'success',
-        message: `รับเรื่องเรียบร้อยแล้ว หมายเลข Ticket #${data.ticket?.id ?? '-'}`,
+        message: `รับเรื่องเรียบร้อยแล้ว หมายเลข Ticket #${data.ticket?.id || '-'}`,
       });
 
-      setForm(initialForm);
-      setSlip(null);
-      setFileInputKey(Date.now());
+      setForm({
+        customer_name: '',
+        customer_phone: '',
+        machine_id: String(defaultMachineId),
+        location: String(defaultLocation),
+        issue_type: 'จ่ายเงินแล้วน้ำแข็งไม่ออก',
+        payment_amount: '',
+        payment_channel: 'QR Payment',
+        transaction_time: '',
+        description: '',
+      });
     } catch (err) {
       console.error(err);
       setResult({
@@ -140,8 +140,8 @@ export default function SupportPage() {
         </div>
 
         <div className="notice">
-          หากจ่ายเงินแล้วน้ำแข็งไม่ออก กรุณาแนบสลิปหรือรูปหน้าจอ
-          เพื่อให้ทีมงานตรวจสอบได้เร็วขึ้นครับ
+          หากจ่ายเงินแล้วน้ำแข็งไม่ออก กรุณากรอกเวลาโอน จำนวนเงิน
+          และเลขอ้างอิง/รายละเอียดจากสลิป เพื่อให้ทีมงานตรวจสอบได้เร็วขึ้นครับ
         </div>
 
         {result && (
@@ -161,7 +161,9 @@ export default function SupportPage() {
             ชื่อ / ชื่อเล่น
             <input
               value={form.customer_name}
-              onChange={(e) => updateField('customer_name', e.target.value)}
+              onChange={(e) =>
+                updateField('customer_name', e.currentTarget.value)
+              }
               placeholder="เช่น คุณเอ"
             />
           </label>
@@ -170,7 +172,9 @@ export default function SupportPage() {
             เบอร์โทรติดต่อ
             <input
               value={form.customer_phone}
-              onChange={(e) => updateField('customer_phone', e.target.value)}
+              onChange={(e) =>
+                updateField('customer_phone', e.currentTarget.value)
+              }
               placeholder="เช่น 08x-xxx-xxxx"
               inputMode="tel"
             />
@@ -181,7 +185,9 @@ export default function SupportPage() {
               หมายเลขตู้
               <input
                 value={form.machine_id}
-                onChange={(e) => updateField('machine_id', e.target.value)}
+                onChange={(e) =>
+                  updateField('machine_id', e.currentTarget.value)
+                }
                 inputMode="numeric"
               />
             </label>
@@ -190,7 +196,9 @@ export default function SupportPage() {
               สถานที่
               <input
                 value={form.location}
-                onChange={(e) => updateField('location', e.target.value)}
+                onChange={(e) =>
+                  updateField('location', e.currentTarget.value)
+                }
               />
             </label>
           </div>
@@ -199,7 +207,9 @@ export default function SupportPage() {
             ประเภทปัญหา
             <select
               value={form.issue_type}
-              onChange={(e) => updateField('issue_type', e.target.value)}
+              onChange={(e) =>
+                updateField('issue_type', e.currentTarget.value)
+              }
               required
             >
               {issueTypes.map((item) => (
@@ -215,7 +225,9 @@ export default function SupportPage() {
               จำนวนเงิน
               <input
                 value={form.payment_amount}
-                onChange={(e) => updateField('payment_amount', e.target.value)}
+                onChange={(e) =>
+                  updateField('payment_amount', e.currentTarget.value)
+                }
                 placeholder="เช่น 10, 20, 30"
                 inputMode="decimal"
               />
@@ -225,7 +237,9 @@ export default function SupportPage() {
               ช่องทางชำระเงิน
               <select
                 value={form.payment_channel}
-                onChange={(e) => updateField('payment_channel', e.target.value)}
+                onChange={(e) =>
+                  updateField('payment_channel', e.currentTarget.value)
+                }
               >
                 {paymentChannels.map((item) => (
                   <option key={item} value={item}>
@@ -237,34 +251,29 @@ export default function SupportPage() {
           </div>
 
           <label>
-            เวลาที่ทำรายการ
+            เวลาที่ทำรายการ / เวลาที่โอน
             <input
               type="datetime-local"
               value={form.transaction_time}
-              onChange={(e) => updateField('transaction_time', e.target.value)}
+              onChange={(e) =>
+                updateField('transaction_time', e.currentTarget.value)
+              }
             />
           </label>
 
           <label>
-            แนบสลิป / รูปหน้าจอ
-            <input
-              key={fileInputKey}
-              id="slip"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              onChange={handleSlipChange}
-            />
-            <small>รองรับ JPG, PNG, WEBP, PDF ขนาดไม่เกิน 5MB</small>
-          </label>
-
-          <label>
-            รายละเอียดเพิ่มเติม
+            รายละเอียดจากสลิป / เลขอ้างอิง / หมายเหตุเพิ่มเติม
             <textarea
               value={form.description}
-              onChange={(e) => updateField('description', e.target.value)}
-              placeholder="เช่น สแกนจ่ายแล้ว แต่ตู้ไม่จ่ายน้ำแข็ง"
-              rows={4}
+              onChange={(e) =>
+                updateField('description', e.currentTarget.value)
+              }
+              placeholder="เช่น โอนเวลา 21:35 จำนวน 10 บาท, Ref: 123456, สแกนจ่ายแล้วแต่น้ำแข็งไม่ออก"
+              rows={5}
             />
+            <small>
+              ไม่ต้องอัปโหลดรูปก็ได้ครับ กรุณากรอกข้อมูลจากสลิปให้มากที่สุด
+            </small>
           </label>
 
           <button type="submit" disabled={loading}>
@@ -338,6 +347,7 @@ export default function SupportPage() {
           padding: 14px 16px;
           margin-bottom: 18px;
           line-height: 1.55;
+          font-weight: 700;
         }
 
         .alert {
@@ -384,6 +394,8 @@ export default function SupportPage() {
           outline: none;
           background: #ffffff;
           box-sizing: border-box;
+          color: #111827;
+          font-weight: 600;
         }
 
         input:focus,
@@ -400,6 +412,7 @@ export default function SupportPage() {
         small {
           color: #6b7280;
           font-weight: 400;
+          line-height: 1.45;
         }
 
         .grid {
