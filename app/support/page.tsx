@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 
 type SupportForm = {
   customer_name: string;
@@ -20,10 +20,10 @@ type ResultMessage = {
 } | null;
 
 type IssueResponse = {
-  ok: boolean;
+  ok?: boolean;
   message?: string;
   ticket?: {
-    id: number;
+    id?: number | string;
   };
 };
 
@@ -52,7 +52,7 @@ export default function SupportPage() {
   const defaultLocation =
     process.env.NEXT_PUBLIC_SUPPORT_LOCATION || 'Lotus Gofresh';
 
-  const [form, setForm] = useState<SupportForm>({
+  const initialForm: SupportForm = {
     customer_name: '',
     customer_phone: '',
     machine_id: String(defaultMachineId),
@@ -62,10 +62,14 @@ export default function SupportPage() {
     payment_channel: 'QR Payment',
     transaction_time: '',
     description: '',
-  });
+  };
 
+  const [form, setForm] = useState<SupportForm>(initialForm);
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<ResultMessage>(null);
+  const [showSuccessPopup, setShowSuccessPopup] =
+    useState<boolean>(false);
+  const [successTicketId, setSuccessTicketId] = useState<string>('-');
 
   function updateField(name: keyof SupportForm, value: string) {
     setForm((prev) => ({
@@ -74,10 +78,11 @@ export default function SupportPage() {
     }));
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setResult(null);
+    setShowSuccessPopup(false);
 
     try {
       const fd = new FormData();
@@ -96,27 +101,24 @@ export default function SupportPage() {
       if (!res.ok || !data.ok) {
         setResult({
           type: 'error',
-          message: data.message || 'ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่',
+          message:
+            data.message ||
+            'ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
         });
         return;
       }
 
+      const ticketId = String(data.ticket?.id ?? '-');
+
+      setSuccessTicketId(ticketId);
+
       setResult({
         type: 'success',
-        message: `รับเรื่องเรียบร้อยแล้ว หมายเลข Ticket #${data.ticket?.id || '-'}`,
+        message: `รับเรื่องเรียบร้อยแล้ว หมายเลข Ticket #${ticketId}`,
       });
 
-      setForm({
-        customer_name: '',
-        customer_phone: '',
-        machine_id: String(defaultMachineId),
-        location: String(defaultLocation),
-        issue_type: 'จ่ายเงินแล้วน้ำแข็งไม่ออก',
-        payment_amount: '',
-        payment_channel: 'QR Payment',
-        transaction_time: '',
-        description: '',
-      });
+      setShowSuccessPopup(true);
+      setForm(initialForm);
     } catch (err) {
       console.error(err);
       setResult({
@@ -130,6 +132,42 @@ export default function SupportPage() {
 
   return (
     <main className="support-page">
+      {showSuccessPopup && (
+        <div
+          className="popup-backdrop"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="success-popup">
+            <div className="success-icon">✅</div>
+
+            <h2>รับเรื่องเรียบร้อยแล้วครับ</h2>
+
+            <p>
+              ทีมงาน DeanIce ได้รับข้อมูลปัญหาของคุณแล้ว
+              และจะตรวจสอบรายการชำระเงิน / สถานะตู้ให้โดยเร็วที่สุด
+            </p>
+
+            <div className="popup-ticket">
+              หมายเลข Ticket: {successTicketId}
+            </div>
+
+            <p className="popup-note">
+              หากเป็นรายการจ่ายเงินแล้วน้ำแข็งไม่ออก
+              กรุณาเก็บสลิปไว้ก่อน เพื่อใช้ตรวจสอบเพิ่มเติมครับ
+            </p>
+
+            <button
+              type="button"
+              className="popup-button"
+              onClick={() => setShowSuccessPopup(false)}
+            >
+              รับทราบ
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="brand">
           <div className="logo">🧊</div>
@@ -140,8 +178,9 @@ export default function SupportPage() {
         </div>
 
         <div className="notice">
-          หากจ่ายเงินแล้วน้ำแข็งไม่ออก กรุณากรอกเวลาโอน จำนวนเงิน
-          และเลขอ้างอิง/รายละเอียดจากสลิป เพื่อให้ทีมงานตรวจสอบได้เร็วขึ้นครับ
+          หากจ่ายเงินแล้วน้ำแข็งไม่ออก กรุณากรอกเวลาโอน
+          จำนวนเงิน และเลขอ้างอิง/รายละเอียดจากสลิป
+          เพื่อให้ทีมงานตรวจสอบได้เร็วขึ้นครับ
         </div>
 
         {result && (
@@ -238,7 +277,10 @@ export default function SupportPage() {
               <select
                 value={form.payment_channel}
                 onChange={(e) =>
-                  updateField('payment_channel', e.currentTarget.value)
+                  updateField(
+                    'payment_channel',
+                    e.currentTarget.value
+                  )
                 }
               >
                 {paymentChannels.map((item) => (
@@ -256,7 +298,10 @@ export default function SupportPage() {
               type="datetime-local"
               value={form.transaction_time}
               onChange={(e) =>
-                updateField('transaction_time', e.currentTarget.value)
+                updateField(
+                  'transaction_time',
+                  e.currentTarget.value
+                )
               }
             />
           </label>
@@ -272,7 +317,8 @@ export default function SupportPage() {
               rows={5}
             />
             <small>
-              ไม่ต้องอัปโหลดรูปก็ได้ครับ กรุณากรอกข้อมูลจากสลิปให้มากที่สุด
+              ไม่ต้องอัปโหลดรูปครับ กรุณากรอกข้อมูลจากสลิปให้มากที่สุด
+              และเก็บสลิปไว้ก่อนเพื่อใช้ตรวจสอบเพิ่มเติม
             </small>
           </label>
 
@@ -447,6 +493,96 @@ export default function SupportPage() {
           line-height: 1.5;
         }
 
+        .popup-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(17, 24, 39, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 9999;
+        }
+
+        .success-popup {
+          width: 100%;
+          max-width: 420px;
+          background: #ffffff;
+          border-radius: 24px;
+          padding: 28px 24px;
+          text-align: center;
+          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+          border: 1px solid #bbf7d0;
+          animation: popupIn 0.22s ease-out;
+        }
+
+        .success-icon {
+          width: 72px;
+          height: 72px;
+          border-radius: 999px;
+          background: #ecfdf5;
+          border: 1px solid #a7f3d0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto 16px;
+          font-size: 36px;
+        }
+
+        .success-popup h2 {
+          margin: 0 0 10px;
+          font-size: 24px;
+          color: #065f46;
+        }
+
+        .success-popup p {
+          margin: 0;
+          color: #374151;
+          line-height: 1.65;
+          font-size: 16px;
+        }
+
+        .popup-ticket {
+          margin: 18px 0;
+          background: #fff7ed;
+          border: 1px solid #fed7aa;
+          color: #9a3412;
+          border-radius: 14px;
+          padding: 12px 14px;
+          font-size: 18px;
+          font-weight: 900;
+        }
+
+        .popup-note {
+          font-size: 14px !important;
+          color: #6b7280 !important;
+        }
+
+        .popup-button {
+          width: 100%;
+          margin-top: 20px;
+          border: none;
+          border-radius: 16px;
+          background: linear-gradient(135deg, #f97316, #ea580c);
+          color: white;
+          padding: 14px 18px;
+          font-size: 17px;
+          font-weight: 900;
+          cursor: pointer;
+          box-shadow: 0 12px 28px rgba(249, 115, 22, 0.35);
+        }
+
+        @keyframes popupIn {
+          from {
+            opacity: 0;
+            transform: translateY(12px) scale(0.96);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
         @media (max-width: 640px) {
           .support-page {
             padding: 14px;
@@ -464,6 +600,19 @@ export default function SupportPage() {
 
           h1 {
             font-size: 24px;
+          }
+
+          .brand {
+            align-items: flex-start;
+          }
+
+          .success-popup {
+            max-width: 360px;
+            padding: 24px 20px;
+          }
+
+          .success-popup h2 {
+            font-size: 22px;
           }
         }
       `}</style>
