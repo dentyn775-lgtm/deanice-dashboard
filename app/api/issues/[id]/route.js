@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const ALLOW_STATUS = [
   'OPEN',
@@ -13,14 +14,22 @@ const ALLOW_STATUS = [
   'REJECTED',
 ];
 
+function cleanText(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
 export async function PATCH(req, context) {
   try {
-    const id = context.params.id;
+    const supabaseAdmin = getSupabaseAdmin();
+
+    const id = context?.params?.id;
     const body = await req.json();
 
-    const pin = body.pin;
-    const status = body.status;
-    const admin_note = body.admin_note || null;
+    const pin = cleanText(body.pin);
+    const status = cleanText(body.status);
+    const admin_note = cleanText(body.admin_note);
 
     if (pin !== process.env.SUPPORT_ADMIN_PIN) {
       return NextResponse.json(
@@ -29,6 +38,16 @@ export async function PATCH(req, context) {
           message: 'Unauthorized',
         },
         { status: 401 }
+      );
+    }
+
+    if (!id) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Missing ticket id',
+        },
+        { status: 400 }
       );
     }
 
@@ -50,21 +69,25 @@ export async function PATCH(req, context) {
 
     if (['REFUNDED', 'RESOLVED', 'REJECTED'].includes(status)) {
       updatePayload.resolved_at = new Date().toISOString();
+    } else {
+      updatePayload.resolved_at = null;
     }
 
     const { data, error } = await supabaseAdmin
       .from('customer_issue_ticket')
       .update(updatePayload)
       .eq('id', id)
-      .select()
+      .select('*')
       .single();
 
     if (error) {
-      console.error('Update issue failed:', error);
+      console.error('Update customer_issue_ticket failed:', error);
+
       return NextResponse.json(
         {
           ok: false,
-          message: 'อัปเดตไม่สำเร็จ',
+          message: `อัปเดตไม่สำเร็จ: ${error.message}`,
+          detail: error,
         },
         { status: 500 }
       );
@@ -72,14 +95,16 @@ export async function PATCH(req, context) {
 
     return NextResponse.json({
       ok: true,
+      message: 'อัปเดตสำเร็จ',
       data,
     });
   } catch (err) {
     console.error('PATCH /api/issues/[id] failed:', err);
+
     return NextResponse.json(
       {
         ok: false,
-        message: 'ระบบขัดข้อง',
+        message: `ระบบขัดข้อง: ${err?.message || 'unknown error'}`,
       },
       { status: 500 }
     );
